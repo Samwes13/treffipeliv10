@@ -1,0 +1,41 @@
+{
+  "name": "treffipelimobile",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "postinstall": "node scripts/clean-local-properties.js && patch-package",
+    "build:web": "expo export --platform web"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~5.0.4",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native-stack": "^6.11.0",
+    "expo": "~53.0.22",
+    "expo-audio": "~0.4.9",
+    "expo-av": "~15.1.7",
+    "expo-linear-gradient": "~14.1.5",
+    "expo-status-bar": "~2.2.3",
+    "firebase": "^12.2.1",
+    "react": "19.0.0",
+    "react-dom": "^19.0.0",
+    "react-native": "0.79.6",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-google-mobile-ads": "^14.11.0",
+    "react-native-reanimated": "~3.17.4",
+    "react-native-safe-area-context": "^5.4.0",
+    "react-native-screens": "~4.11.1",
+    "react-native-svg": "^15.11.2",
+    "react-native-web": "^0.20.0",
+    "expo-blur": "~14.1.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "react-scripts": "^5.0.1",
+    "patch-package": "^8.0.1"
+  },
+  "private": true
+}

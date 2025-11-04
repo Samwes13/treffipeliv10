@@ -1,0 +1,72 @@
+import React, { useEffect } from 'react';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { StatusBar } from 'react-native';
+
+import styles from './styles'; // Oletetaan, että style.js sijaitsee samassa hakemistossa
+import EnterUsername from './components/EnterUsername';  
+import GameOptionScreen from './components/GameOptionScreen';
+import CardTraits from './components/CardTraits';  
+import GameLobby from './components/GameLobby';
+import JoinGame from './components/JoinGame';
+import GamePlay from './components/GamePlay';
+import GameEnd from './components/GameEnd';
+import DebugSimulate from './components/DebugSimulate';
+
+
+export default function App() {
+  const Stack = createNativeStackNavigator();
+
+  //Määritä linking_objekti
+  const linking = {
+    prefixes: ['https://treffipeli.fi', 'treffipeli://'],
+    config: {
+      screens: {
+        EnterUsername: 'enterusername',
+        GameOptionScreen: 'gameoptionscreen',
+        GameLobby: 'GameLobby',
+        JoinGame: 'JoinGame',
+        CardTraits: 'CardTraits',
+        GamePlay: 'GamePlay',
+        GameEnd: 'GameEnd',
+        DebugSimulate: 'DebugSimulate',
+      },
+    },
+  };
+
+  // Make navigator/content backgrounds transparent so our gradients fill 100%
+  const navTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      background: 'transparent',
+    },
+  };
+
+  return (
+      <NavigationContainer linking={linking} theme={navTheme}>
+        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+        {/** Initialize Google Mobile Ads (no-op in Expo Go) */}
+        {(() => {
+          // Side-effect to initialize ads once app mounts
+          // Wrapped in IIFE so we can keep JSX structure minimal
+          // useEffect cannot be used directly inside JSX, so we attach to component below
+          return null;
+        })()}
+        <Stack.Navigator initialRouteName="EnterUsername" screenOptions={{ contentStyle: { backgroundColor: 'transparent' } }}>
+          <Stack.Screen name="EnterUsername" component={EnterUsername} options={{ headerShown: false }} /> 
+          <Stack.Screen name="GameOptionScreen" component={GameOptionScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="GameLobby" component={GameLobby} options={{ headerShown: false }} />
+          <Stack.Screen name="JoinGame" component={JoinGame} options={{ headerShown: false }} />
+          <Stack.Screen name="CardTraits" component={CardTraits} options={{ headerShown: false }} />
+          <Stack.Screen name="GamePlay" component={GamePlay} options={{ headerShown: false }} />
+          <Stack.Screen name="GameEnd" component={GameEnd} options={{ headerShown: false }} />
+          <Stack.Screen name="DebugSimulate" component={DebugSimulate} options={{ headerShown: false }} />
+          
+        </Stack.Navigator>
+      </NavigationContainer>
+      
+    
+  );
+}
+

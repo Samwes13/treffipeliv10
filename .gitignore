@@ -1,0 +1,4 @@
+android/local.properties
+node_modules/
+android/build/
+.expo/

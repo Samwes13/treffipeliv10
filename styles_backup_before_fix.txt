@@ -1,0 +1,278 @@
+import { StyleSheet } from 'react-native';
+
+const styles = StyleSheet.create({
+  
+   param($m) $m.Value + "`n" + $insert 
+
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  subtitle: {
+    fontSize: 35,
+    color: 'white',
+    fontWeight: 'bold',
+    paddingBottom: 5,
+  },
+  title: {
+    fontSize: 30,
+    
+    marginBottom: 20,
+    color: 'white',
+    fontWeight: 'bold',
+    
+    textAlign: 'center', // Keskittää otsikon
+  },
+  input: {
+    width: '80%',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FE9091',
+    borderRadius: 25,
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    fontSize: 16,
+    color: '#000',
+  },
+  button: {
+    backgroundColor: '#ff8fd9',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    marginBottom: 20,
+    marginRight: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 20,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  helpIcon: {
+    position: 'absolute',
+    top: '10%',
+    right: '8%',
+    tintColor: 'white',
+  },
+  modal param($m) $m.Value + "`n" + $insert 
+  modalContent: {
+    width: '95%',
+    height: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    paddingTop: '13%',
+    
+  },
+  closeButton: {
+    marginTop: '5%',
+    marginBottom: '5%',
+    backgroundColor: '#d9534f',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+
+  logo: {
+    position: 'absolute', // Asettaa logon absoluuttiseen sijaintiin
+    top: 0, // Sijoittaa logon aivan ylös
+    alignSelf: 'center', // Keskittää logon vaakasuunnassa
+    width: '100%', // Voit säätää logon leveyttä
+    height: 300, // Voit säätää logon korkeutta
+    resizeMode: 'contain', // Pitää mittasuhteet oikeina
+    
+  },
+  
+  playerItem: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 10,
+    marginVertical: 5,
+    marginHorizontal: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  playerText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  disabledButton: {
+    backgroundColor: 'gray',
+  },
+
+
+  roundText: {
+    fontSize: 18,
+    
+    color: '#FFFFFF',
+    marginBottom: 20,
+  },
+  traitText: {
+    fontWeight: 'bold',
+    fontSize: 32,
+    color: '#ff66c4',
+    marginBottom: 15,
+
+    textAlign: 'center',
+    backgroundColor: '#FFFFFF', // Taustaväri
+    padding: 19,                // Sisennys laatikon sisällä
+    borderRadius: 14,
+  },
+
+  newtraitText: {
+    fontWeight: 'bold',
+    fontSize: 32,
+    color: '#FFFFFF',
+    marginBottom: 15,
+
+    textAlign: 'center',
+
+  },
+
+  playerTextPlay: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginVertical: 5,
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  
+
+  playerAcceptedTraitset: {
+    color: '#FFFFFF',         // Tekstin jakaminen riveille
+    fontSize: 18,             // Määrittää, että tekstin leveys voi käyttää koko tilan
+    textAlign: 'centered',         // Tekstin tasaus vasemmalle (voi olla myös 'center' tai 'right')
+    marginVertical: 5,
+  },
+
+  button param($m) $m.Value + "`n" + $insert 
+
+  buttonYes: {
+    backgroundColor: '80C938',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    marginRight: 20,
+  },
+
+  buttonNo: {
+    backgroundColor: 'F65151',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 10,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+
+  },
+
+  removeButton: {
+    color: 'red',
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+
+  //Joingame kohdassa takaisin nappi tyylit
+  backButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25, // Pallon muoto
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1, // Varmista, että nappi on päällä muiden elementtien
+  },
+
+  ///animaatio gameplay
+  animated param($m) $m.Value + "`n" + $insert 
+
+  animation param($m) $m.Value + "`n" + $insert 
+
+  animatedText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+  },
+
+  animationText: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+
+  drinkUpText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  // Centered help icon container for GameOptions
+  helpIconCentered: {
+    marginTop: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  // Spacer to push content below the absolute-positioned logo when needed
+  logoSpaceLarge: {
+    height: 220,
+    width: '100%',
+  },
+  helpIconTopRight: {
+    position: 'absolute',
+    top: 24,
+    right: 16,
+  },
+  // GameOptions top row: logo + help icon on same line
+  topRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    marginBottom: 10,
+    gap: 12,
+  },
+  logoInline: {
+    position: 'relative',
+    width: 240,
+    height: 100,
+    resizeMode: 'contain',
+    marginRight: 8,
+  },
+  helpIconInline: {
+    padding: 8,
+  },
+  
+});
+
+export default styles;
+
+

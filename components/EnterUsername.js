@@ -1,0 +1,449 @@
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  StyleSheet,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import styles from "../styles";
+import { ref, push, remove, update } from "firebase/database";
+import { database } from "../firebaseConfig";
+import { LinearGradient } from "expo-linear-gradient";
+import ModalAlert from "./ModalAlert";
+import { Ionicons } from "@expo/vector-icons";
+
+const USERNAME_SUGGESTIONS = [
+  "AuroraSoul",
+  "PixelNomad",
+  "NorthernGlow",
+  "VelvetEcho",
+  "StarryPulse",
+  "CharmingFox",
+  "LuminousLynx",
+  "MysticWave",
+  "FrostedMuse",
+  "NeonDrift",
+];
+
+const getRandomSuggestion = () => {
+  const index = Math.floor(Math.random() * USERNAME_SUGGESTIONS.length);
+  return USERNAME_SUGGESTIONS[index];
+};
+
+export default function EnterUsername({ navigation }) {
+  const [username, setUsername] = useState("");
+  const [alertState, setAlertState] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    variant: "info",
+  });
+
+  const usernameLength = username.trim().length;
+
+  const handleInputChange = (text) => setUsername(text);
+
+  const handleSuggestion = () => {
+    setUsername(getRandomSuggestion());
+  };
+
+  const saveUsername = (user) => {
+    const ttlMs = 2 * 60 * 60 * 1000;
+    const usersRef = ref(database, "users/");
+    const newUserRef = push(usersRef);
+    const playerData = {
+      playerId: newUserRef.key,
+      username: user,
+      timestamp: Date.now(),
+      ishost: false,
+      gamepin: null,
+    };
+
+    update(newUserRef, playerData)
+      .then(() => console.log(`User ${user} saved with ID ${newUserRef.key}`))
+      .catch((error) => console.error("Error saving username:", error));
+    setTimeout(() => {
+      remove(newUserRef)
+        .then(() => console.log(`Username ${user} removed after 2 hours`))
+        .catch((error) => console.error("Error removing username:", error));
+    }, ttlMs);
+  };
+
+  const handleSubmit = () => {
+    const trimmed = username.trim();
+
+    if (trimmed.length < 3) {
+      setAlertState({
+        visible: true,
+        title: "Name Too Short",
+        message: "Enter at least 3 characters for your username.",
+        variant: "error",
+      });
+      return;
+    }
+
+    saveUsername(trimmed);
+    navigation.navigate("GameOptionScreen", { username: trimmed });
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={["#5170ff", "#ff66c4"]}
+        style={styles.background}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        pointerEvents="none"
+      />
+      <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
+        <View pointerEvents="none" style={localStyles.decorativeLayer}>
+          <View style={localStyles.blobLarge} />
+          <View style={localStyles.blobSmall} />
+        </View>
+
+        <KeyboardAvoidingView
+          style={localStyles.safeArea}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
+          <ScrollView
+            style={localStyles.scroll}
+            contentContainerStyle={localStyles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={false}
+            keyboardDismissMode="on-drag"
+          >
+            <View style={localStyles.scrollInner}>
+              <Image
+                source={require("../assets/logoNew.png")}
+                style={localStyles.logo}
+              />
+
+              <View style={localStyles.hero}>
+                <Text style={localStyles.heroTitle}>
+                  Welcome to Treffipeli!
+                </Text>
+              </View>
+
+              <LinearGradient
+                colors={["rgba(255,255,255,0.72)", "rgba(255,255,255,0.25)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={localStyles.cardGradient}
+              >
+                <View style={localStyles.card}>
+                  <Text style={localStyles.cardTitle}>Your Username</Text>
+                  <Text style={localStyles.cardCopy}>
+                    This name is visible to other players during the game. You
+                    can change it later in settings.
+                  </Text>
+
+                  <View style={localStyles.inputWrapper}>
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={24}
+                      color="#906AFE"
+                      style={localStyles.inputIcon}
+                    />
+                    <TextInput
+                      style={localStyles.input}
+                      placeholder="e.g. VelvetEcho"
+                      value={username}
+                      onChangeText={handleInputChange}
+                      placeholderTextColor="rgba(32, 26, 64, 0.35)"
+                      maxLength={16}
+                      returnKeyType="go"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      textContentType="username"
+                      onSubmitEditing={handleSubmit}
+                    />
+                  </View>
+
+                  <View style={localStyles.metaRow}>
+                    <Text style={localStyles.helperLabel}>
+                      Characters: {usernameLength}/16
+                    </Text>
+                    <Text style={localStyles.helperAccent}>
+                      Recommended: 3-16 characters
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={handleSuggestion}
+                    style={localStyles.secondaryButton}
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={20}
+                      color="#906AFE"
+                    />
+                     <Text style={localStyles.secondaryButtonText}>
+                      Generate Username
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    onPress={handleSubmit}
+                    style={localStyles.primaryButton}
+                  >
+                    <LinearGradient
+                      colors={["#906AFE", "#ff66c4"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={localStyles.primaryButtonGradient}
+                    >
+                      <Text style={localStyles.primaryButtonText}>
+                        Continue to Game
+                      </Text>
+                      <Ionicons
+                        name="arrow-forward-circle"
+                        size={26}
+                        color="#ffffff"
+                      />
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <Text style={localStyles.helperText}>
+                    Tip: Short, punchy usernames are easier to remember.
+                  </Text>
+                </View>
+              </LinearGradient>
+
+              <View style={localStyles.footer}>
+                <Text style={localStyles.footerLabel}>Treffipeli</Text>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+
+      <ModalAlert
+        visible={alertState.visible}
+        title={alertState.title}
+        message={alertState.message}
+        variant={alertState.variant}
+        onClose={() => setAlertState((s) => ({ ...s, visible: false }))}
+      />
+    </View>
+  );
+}
+
+const localStyles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  decorativeLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  blobLarge: {
+    position: "absolute",
+    top: -120,
+    right: -60,
+    width: 260,
+    height: 260,
+    borderRadius: 200,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    transform: [{ rotate: "18deg" }],
+  },
+  blobSmall: {
+    position: "absolute",
+    bottom: 140,
+    left: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 160,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    transform: [{ rotate: "-14deg" }],
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  scrollInner: {
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+    alignItems: "center",
+  },
+  logo: {
+    height: 120,
+    width: 220,
+    resizeMode: "contain",
+    marginBottom: 16,
+  },
+  hero: {
+    alignItems: "center",
+    marginBottom: 8,
+    paddingHorizontal: 12,
+  },
+  heroTitle: {
+    fontSize: 30,
+    fontWeight: "700",
+    color: "#ffffff",
+    textAlign: "center",
+  },
+  heroSubtitle: {
+    marginTop: 8,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+    color: "rgba(255, 255, 255, 0.82)",
+  },
+  cardGradient: {
+    width: "100%",
+    borderRadius: 28,
+    padding: 1.5,
+    marginTop: 24,
+    shadowColor: "#13093A",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.34,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  card: {
+    borderRadius: 26,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.45)",
+  },
+  cardBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(144, 106, 254, 0.14)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  cardBadgeText: {
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6B5D92",
+  },
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#221641",
+    marginTop: 22,
+  },
+  cardCopy: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#554876",
+    marginTop: 8,
+  },
+  inputWrapper: {
+    marginTop: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(144, 106, 254, 0.28)",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#221641",
+    paddingVertical: 14,
+  },
+  metaRow: {
+    marginTop: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  helperLabel: {
+    flexShrink: 1,
+    marginRight: 12,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B5D92",
+  },
+  helperAccent: {
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#906AFE",
+    textAlign: "right",
+  },
+  secondaryButton: {
+    marginTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(144, 106, 254, 0.12)",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  secondaryButtonText: {
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#6B5D92",
+  },
+  primaryButton: {
+    marginTop: 24,
+  },
+  primaryButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  primaryButtonText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  helperText: {
+    marginTop: 22,
+    fontSize: 13,
+    lineHeight: 20,
+    color: "#7C73A3",
+    textAlign: "center",
+  },
+  footer: {
+    marginTop: 40,
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  footerLabel: {
+    fontSize: 13,
+    letterSpacing: 2,
+    color: "rgba(255, 255, 255, 0.75)",
+  },
+  footerText: {
+    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+    color: "rgba(255, 255, 255, 0.82)",
+  },
+});

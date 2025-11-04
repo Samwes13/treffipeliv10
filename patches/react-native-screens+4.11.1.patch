@@ -1,0 +1,27 @@
+diff --git a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenWindowTraits.kt b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenWindowTraits.kt
+index 00d6e22..0515974 100644
+--- a/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenWindowTraits.kt
++++ b/node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/ScreenWindowTraits.kt
+@@ -95,7 +95,7 @@ object ScreenWindowTraits {
+         activity: Activity?,
+         context: ReactContext?,
+     ) {
+-        if (activity == null || context == null) {
++        if (activity == null || context == null || Build.VERSION.SDK_INT >= 35) {
+             return
+         }
+         if (defaultStatusBarColor == null) {
+@@ -208,7 +208,7 @@ object ScreenWindowTraits {
+         screen: Screen,
+         activity: Activity?,
+     ) {
+-        if (activity == null) {
++        if (activity == null || Build.VERSION.SDK_INT >= 35) {
+             return
+         }
+ 
+@@ -367,3 +367,4 @@ object ScreenWindowTraits {
+         return darkness < 0.5
+     }
+ }
++
