@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   TouchableOpacity,
@@ -39,6 +39,7 @@ export default function GameLobby({ route, navigation }) {
   const [countdownData, setCountdownData] = useState(null);
   const [countdownStep, setCountdownStep] = useState(null);
   const [countdownActive, setCountdownActive] = useState(false);
+  const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
     const gameRef = ref(database, `games/${gamepin}`);
@@ -203,10 +204,21 @@ export default function GameLobby({ route, navigation }) {
   }, [countdownData]);
 
   useEffect(() => {
-    if (isGameStarted) {
-      navigation.navigate("GamePlay", { username, gamepin });
+    if (isGameStarted && !hasNavigatedRef.current) {
+      hasNavigatedRef.current = true;
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: "GamePlay",
+            params: { username, gamepin },
+          },
+        ],
+      });
+    } else if (!isGameStarted) {
+      hasNavigatedRef.current = false;
     }
-  }, [isGameStarted, navigation, gamepin, username]);
+  }, [gamepin, isGameStarted, navigation, username]);
 
   const shuffleArray = (array) => {
     for (let i = array.length - 1; i > 0; i -= 1) {

@@ -8,11 +8,13 @@ import {
   Dimensions,
   Easing,
   ScrollView,
+  Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, update, set } from "firebase/database";
+import { ref, onValue, update, set, get } from "firebase/database";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { database } from "../firebaseConfig";
@@ -64,6 +66,7 @@ export default function GamePlay({ route, navigation }) {
   const [decisionInProgress, setDecisionInProgress] = useState(false);
   const [decisionCountdown, setDecisionCountdown] = useState(null);
   const [decisionReady, setDecisionReady] = useState(false);
+  const [leaveInProgress, setLeaveInProgress] = useState(false);
 
   const cardX = useRef(new Animated.Value(screenW)).current;
   const overlayX = useRef(new Animated.Value(screenW)).current;
@@ -74,6 +77,7 @@ export default function GamePlay({ route, navigation }) {
   const nextPhaseTimeoutRef = useRef(null);
   const revealInitSignatureRef = useRef("");
   const overlaySeenTsRef = useRef(0);
+  const navigatedAwayRef = useRef(false);
 
   const animateIn = (value) =>
     Animated.timing(value, {
@@ -113,6 +117,22 @@ export default function GamePlay({ route, navigation }) {
     },
     [gamepin],
   );
+
+  const navigateToOptions = useCallback(() => {
+    if (navigatedAwayRef.current) {
+      return;
+    }
+    navigatedAwayRef.current = true;
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: "GameOptionScreen",
+          params: { username },
+        },
+      ],
+    });
+  }, [navigation, username]);
 
   // Preload the drink sound once
   useEffect(() => {
@@ -158,10 +178,34 @@ export default function GamePlay({ route, navigation }) {
   useEffect(() => {
     const gameRef = ref(database, `games/${gamepin}`);
     const unsubscribe = onValue(gameRef, (snapshot) => {
-      const gameData = snapshot.val();
-      if (!gameData) {
+      if (navigatedAwayRef.current) {
         return;
       }
+
+      const gameData = snapshot.val();
+      if (!gameData) {
+        navigateToOptions();
+        unsubscribe();
+        return;
+      }
+
+      const playersData = gameData.players || {};
+      const playerRecord = playersData[username];
+
+      if (!playerRecord || playerRecord.status === "left") {
+        navigateToOptions();
+        unsubscribe();
+        return;
+      }
+
+      const rawPlayers = Object.keys(playersData).map((key) => ({
+        username: key,
+        ...playersData[key],
+      }));
+
+      const activePlayers = rawPlayers.filter(
+        (player) => player?.status !== "left",
+      );
 
       setGameState((prev) => ({
         ...prev,
@@ -170,17 +214,18 @@ export default function GamePlay({ route, navigation }) {
         currentTrait: gameData.currentTrait || null,
         currentPlayerIndex: gameData.currentPlayerIndex || 0,
         currentRound: gameData.currentRound || 1,
-        players: Object.keys(gameData.players || {}).map((key) => ({
-          username: key,
-          ...gameData.players[key],
-        })),
+        players: activePlayers,
         playerAcceptedTraits:
-          (gameData.players &&
-            gameData.players[username] &&
-            gameData.players[username].acceptedTraits) ||
-          [],
+          (playersData[username] && playersData[username].acceptedTraits) || [],
         traitReveal: gameData.traitReveal || null,
       }));
+
+      const finalRoundReached = (gameData.currentRound || 0) > 6;
+      if (finalRoundReached) {
+        navigateToOptions();
+        unsubscribe();
+        return;
+      }
 
       // Handle overlay animations (shared between players)
       if (gameData.animation) {
@@ -249,15 +294,17 @@ export default function GamePlay({ route, navigation }) {
         overlaySeenTsRef.current = 0;
       }
 
-      // Navigate to Game End when the final round has completed
-      const finalRoundReached = (gameData.currentRound || 0) > 6;
-      if (finalRoundReached) {
-        navigation.navigate("GameEnd", { gamepin, username });
-      }
     });
 
     return () => unsubscribe();
-  }, [gamepin, navigation, overlay.visible, overlayX, username]);
+  }, [
+    gamepin,
+    navigateToOptions,
+    overlay.visible,
+    overlayX,
+    queueAnimationClear,
+    username,
+  ]);
 
   const currentTraitId = gameState.currentTrait?.traitId ?? null;
   const usedTraitCount = Array.isArray(gameState.usedTraits)
@@ -388,6 +435,213 @@ export default function GamePlay({ route, navigation }) {
     };
   }, [gameState.currentTrait, gameState.traits, gameState.usedTraits]);
 
+  // Cancel the local decision countdown timer so another phase can start cleanly
+  const clearDecisionCountdown = useCallback(() => {
+    if (decisionTimerRef.current) {
+      clearInterval(decisionTimerRef.current);
+      decisionTimerRef.current = null;
+    }
+    setDecisionCountdown(null);
+  }, []);
+
+  const leaveGame = useCallback(async () => {
+    if (leaveInProgress) {
+      return;
+    }
+
+    clearDecisionCountdown();
+    if (nextPhaseTimeoutRef.current) {
+      clearTimeout(nextPhaseTimeoutRef.current);
+      nextPhaseTimeoutRef.current = null;
+    }
+    if (animationClearTimerRef.current) {
+      clearTimeout(animationClearTimerRef.current);
+      animationClearTimerRef.current = null;
+    }
+    setLeaveInProgress(true);
+
+    try {
+      const gameRef = ref(database, `games/${gamepin}`);
+      const snapshot = await get(gameRef);
+
+      if (!snapshot.exists()) {
+        navigateToOptions();
+        return;
+      }
+
+      const gameData = snapshot.val() || {};
+      const playersData = gameData.players || {};
+      const playerKeys = Object.keys(playersData);
+
+      const rawPlayers = playerKeys.map((key) => ({
+        key,
+        username: key,
+        ...playersData[key],
+      }));
+
+      const activePlayers = rawPlayers.filter(
+        (player) => player?.status !== "left",
+      );
+
+      const leavingIndex = activePlayers.findIndex(
+        (player) => player.key === username,
+      );
+
+      const updatedActive = activePlayers.filter(
+        (player) => player.key !== username,
+      );
+
+      const currentIndex = Math.max(
+        0,
+        Math.min(
+          Number(gameData.currentPlayerIndex) || 0,
+          activePlayers.length ? activePlayers.length - 1 : 0,
+        ),
+      );
+
+      let nextIndex = currentIndex;
+      let shouldAdvanceTrait = false;
+
+      if (leavingIndex !== -1) {
+        if (!updatedActive.length) {
+          nextIndex = 0;
+        } else if (leavingIndex < currentIndex) {
+          nextIndex = Math.max(currentIndex - 1, 0);
+        } else if (leavingIndex === currentIndex) {
+          shouldAdvanceTrait = true;
+          if (currentIndex >= updatedActive.length) {
+            nextIndex = 0;
+          } else {
+            nextIndex = currentIndex % updatedActive.length;
+          }
+        }
+      } else {
+        nextIndex = Math.min(
+          nextIndex,
+          Math.max(updatedActive.length - 1, 0),
+        );
+      }
+
+      const currentRoundValue = Number(gameData.currentRound) || 1;
+      let nextRound = currentRoundValue;
+
+      if (
+        shouldAdvanceTrait &&
+        updatedActive.length > 0 &&
+        nextIndex === 0
+      ) {
+        nextRound = currentRoundValue + 1;
+      }
+
+      const updates = {
+        [`players/${username}/status`]: "left",
+        [`players/${username}/leftAt`]: Date.now(),
+        [`players/${username}/active`]: false,
+        currentPlayerIndex: nextIndex,
+        currentRound: nextRound,
+      };
+
+      if (
+        gameData.traitReveal &&
+        gameData.traitReveal.player === username
+      ) {
+        updates.traitReveal = null;
+      }
+
+      let nextPlayerName = "-";
+      let nextDateNumber = 1;
+
+      if (shouldAdvanceTrait) {
+        const traitUpdates = buildNextTraitUpdates();
+        Object.assign(updates, traitUpdates);
+
+        if (updatedActive.length > 0) {
+          const nextPlayer = updatedActive[nextIndex] || null;
+          nextPlayerName = nextPlayer?.username || "-";
+          const nextAcceptedLength = Array.isArray(
+            nextPlayer?.acceptedTraits,
+          )
+            ? nextPlayer.acceptedTraits.length
+            : 0;
+          nextDateNumber = nextAcceptedLength + 1;
+        }
+      }
+
+      await update(gameRef, updates);
+
+      if (shouldAdvanceTrait && updatedActive.length > 0) {
+        const animationRef = ref(database, `games/${gamepin}/animation`);
+        try {
+          await set(animationRef, {
+            phase: "next",
+            nextPlayerName,
+            nextDateNumber,
+            drink: false,
+            startedAt: Date.now(),
+            durationMs: NEXT_ANIM_DURATION,
+            reason: "player_left",
+          });
+        } catch (error) {
+          console.warn(
+            "Failed to broadcast next animation after leaving:",
+            error?.message,
+          );
+        }
+      }
+
+      navigateToOptions();
+    } catch (error) {
+      console.error("Failed to leave game:", error);
+      Alert.alert(
+        "Leaving failed",
+        "We couldn't leave the game right now. Please try again shortly.",
+      );
+    } finally {
+      if (!navigatedAwayRef.current) {
+        setLeaveInProgress(false);
+      }
+    }
+  }, [
+    buildNextTraitUpdates,
+    clearDecisionCountdown,
+    gamepin,
+    leaveInProgress,
+    navigateToOptions,
+    username,
+  ]);
+
+  const confirmLeaveGame = useCallback(() => {
+    if (leaveInProgress) {
+      return;
+    }
+
+    if (Platform.OS === "web") {
+      const confirmResult =
+        typeof window !== "undefined"
+          ? window.confirm(
+              "Leave the game? Your traits stay in play for the others.",
+            )
+          : true;
+      if (confirmResult) {
+        leaveGame();
+      }
+      return;
+    }
+
+    Alert.alert(
+      "Leave Game",
+      "Are you sure you want to leave the game? Your traits stay in play.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: leaveGame,
+        },
+      ],
+    );
+  }, [leaveGame, leaveInProgress]);
+
   useEffect(() => {
     if (!currentTraitId) {
       revealInitSignatureRef.current = "";
@@ -472,15 +726,6 @@ export default function GamePlay({ route, navigation }) {
     cardX.setValue(screenW);
     animateIn(cardX).start();
   }, [cardX, currentTraitId]);
-
-  // Clear countdown helper
-  const clearDecisionCountdown = useCallback(() => {
-    if (decisionTimerRef.current) {
-      clearInterval(decisionTimerRef.current);
-      decisionTimerRef.current = null;
-    }
-    setDecisionCountdown(null);
-  }, []);
 
   const handleRevealNext = useCallback(async () => {
     if (!revealVisible || !isCurrentUserTurn) {
@@ -714,29 +959,50 @@ export default function GamePlay({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={gp.header}>
-            <View style={gp.roundRow}>
-              <View style={gp.roundBadge}>
-                <Ionicons
-                  name="repeat-outline"
-                  size={16}
-                  color="#F8ECFF"
-                  style={gp.roundBadgeIcon}
-                />
-                <Text style={gp.roundBadgeText}>
-                  Round {gameState.currentRound}
-                </Text>
+            <View style={gp.headerTop}>
+              <View style={gp.roundRow}>
+                <View style={gp.roundBadge}>
+                  <Ionicons
+                    name="repeat-outline"
+                    size={16}
+                    color="#F8ECFF"
+                    style={gp.roundBadgeIcon}
+                  />
+                  <Text style={gp.roundBadgeText}>
+                    Round {gameState.currentRound}
+                  </Text>
+                </View>
+                <View style={gp.turnChip}>
+                  <Ionicons
+                    name="person-circle-outline"
+                    size={20}
+                    color="#F8ECFF"
+                    style={gp.turnChipIcon}
+                  />
+                  <Text style={gp.turnChipText}>
+                    {currentPlayer?.username || "-"}
+                  </Text>
+                </View>
               </View>
-              <View style={gp.turnChip}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  gp.leaveButton,
+                  leaveInProgress && gp.leaveButtonDisabled,
+                ]}
+                onPress={confirmLeaveGame}
+                disabled={leaveInProgress}
+              >
                 <Ionicons
-                  name="person-circle-outline"
-                  size={20}
+                  name="exit-outline"
+                  size={18}
                   color="#F8ECFF"
-                  style={gp.turnChipIcon}
+                  style={gp.leaveButtonIcon}
                 />
-                <Text style={gp.turnChipText}>
-                  {currentPlayer?.username || "-"}
+                <Text style={gp.leaveButtonText}>
+                  {leaveInProgress ? "Leaving..." : "Leave"}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
             <Text style={gp.headerSubtitle}>
               {isCurrentUserTurn
@@ -780,12 +1046,12 @@ export default function GamePlay({ route, navigation }) {
             >
               <View style={gp.traitLabelRow}>
                 <Ionicons
-                  name="sparkles-outline"
+                  name="heart"
                   size={18}
                   color="#906AFE"
                   style={gp.traitLabelIcon}
                 />
-                <Text style={gp.traitLabel}>He / She</Text>
+                <Text style={gp.traitLabel}>Date partner traits</Text>
               </View>
               <Text style={gp.traitText}>{traitText}</Text>
               <View style={gp.traitMetaRow}>
@@ -1129,11 +1395,17 @@ const gp = StyleSheet.create({
     width: "100%",
     marginBottom: 24,
   },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   roundRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 0,
   },
   roundBadge: {
     flexDirection: "row",
@@ -1167,6 +1439,25 @@ const gp = StyleSheet.create({
     color: "#F8ECFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  leaveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(17,16,32,0.32)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  leaveButtonDisabled: {
+    opacity: 0.6,
+  },
+  leaveButtonIcon: {
+    marginRight: 6,
+  },
+  leaveButtonText: {
+    color: "#F8ECFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   headerSubtitle: {
     color: "rgba(255,255,255,0.78)",

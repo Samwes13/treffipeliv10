@@ -158,14 +158,6 @@ export default function JoinGame({ navigation, route }) {
                 style={localStyles.logo}
               />
 
-              <View style={localStyles.hero}>
-                <Text style={localStyles.heroTitle}>Join a Game</Text>
-                <Text style={localStyles.heroSubtitle}>
-                  Enter the code your friend shared. We’ll confirm as soon as the
-                  code is valid.
-                </Text>
-              </View>
-
               <LinearGradient
                 colors={["rgba(255,255,255,0.82)", "rgba(255,255,255,0.55)"]}
                 start={{ x: 0, y: 0 }}
@@ -182,8 +174,7 @@ export default function JoinGame({ navigation, route }) {
                   </View>
                     <Text style={localStyles.cardTitle}>Game Code</Text>
                     <Text style={localStyles.cardCopy}>
-                      Each code uses six letters or numbers. Uppercase and
-                      lowercase letters are treated the same.
+                      Each code uses six letters or numbers.
                     </Text>
                   </View>
 
@@ -290,8 +281,7 @@ export default function JoinGame({ navigation, route }) {
                       style={{ marginRight: 8 }}
                     />
                     <Text style={localStyles.hintBoxText}>
-                      If the code fails, ask the host to generate a new one or
-                      double-check for typos.
+                      If the code fails, double-check for typos.
                     </Text>
                   </View>
                 </View>
@@ -359,24 +349,6 @@ const localStyles = StyleSheet.create({
     width: 220,
     resizeMode: "contain",
     marginBottom: 16,
-  },
-  hero: {
-    alignItems: "center",
-    paddingHorizontal: 12,
-    marginBottom: 8,
-  },
-  heroTitle: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#ffffff",
-    textAlign: "center",
-  },
-  heroSubtitle: {
-    marginTop: 10,
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: "center",
-    color: "rgba(255, 255, 255, 0.82)",
   },
   cardGradient: {
     width: "100%",
