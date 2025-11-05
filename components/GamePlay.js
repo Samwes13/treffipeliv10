@@ -18,6 +18,8 @@ import { BlurView } from "expo-blur";
 import { database } from "../firebaseConfig";
 
 const screenW = Dimensions.get("window").width || 360;
+const DECISION_ANIM_DURATION = 2000;
+const NEXT_ANIM_DURATION = 2000;
 
 export default function GamePlay({ route, navigation }) {
   const { gamepin, username } = route.params;
@@ -69,8 +71,9 @@ export default function GamePlay({ route, navigation }) {
   const lastAnimTsRef = useRef(0);
   const drinkSoundRef = useRef(null);
   const animationClearTimerRef = useRef(null);
+  const nextPhaseTimeoutRef = useRef(null);
   const revealInitSignatureRef = useRef("");
-  const revealCloseTimerRef = useRef(null);
+  const overlaySeenTsRef = useRef(0);
 
   const animateIn = (value) =>
     Animated.timing(value, {
@@ -89,7 +92,7 @@ export default function GamePlay({ route, navigation }) {
     }).start(callback);
 
   const queueAnimationClear = useCallback(
-    (startedAt, timeoutMs = 2200) => {
+    (startedAt, timeoutMs = NEXT_ANIM_DURATION) => {
       if (!startedAt) {
         return;
       }
@@ -182,54 +185,68 @@ export default function GamePlay({ route, navigation }) {
       // Handle overlay animations (shared between players)
       if (gameData.animation) {
         const anim = gameData.animation;
+        const startedAt = Number(anim.startedAt) || 0;
+        const hasTimestamp = startedAt > 0;
+
         if (anim.startedAt && anim.startedAt !== lastAnimTsRef.current) {
           lastAnimTsRef.current = anim.startedAt;
-          if (
-            (anim.phase === "next" && anim.drink) ||
-            (anim.phase === "decision" &&
-              (anim.kind === "ei" || anim.kind === "no"))
-          ) {
+          if (anim.phase === "next" && anim.drink) {
             playDrinkUp();
           }
         }
 
-        if (anim.phase === "decision") {
-          if (animationClearTimerRef.current) {
-            clearTimeout(animationClearTimerRef.current);
-            animationClearTimerRef.current = null;
-          }
-          const yes = anim.kind === "juu" || anim.kind === "yes";
-          setOverlay({
-            visible: true,
-            bgColor: yes ? "#22c55e" : "#ef4444",
-            title: yes ? "To be continued" : "Break up",
-            subtitle: yes ? "" : "Drink up!",
-          });
-        } else if (anim.phase === "next") {
-          queueAnimationClear(anim.startedAt, 2600);
-          setOverlay({
-            visible: true,
-            bgColor: "#906AFE",
-            title: `Next: ${anim.nextPlayerName || "-"}`,
-            subtitle: `Date ${anim.nextDateNumber || "-"}`,
-          });
-        }
+        const shouldShowOverlay = hasTimestamp
+          ? startedAt !== overlaySeenTsRef.current
+          : overlaySeenTsRef.current === 0;
 
-        setShowOverlay(true);
-        overlayX.setValue(screenW);
-        animateIn(overlayX).start();
+        if (shouldShowOverlay) {
+          overlaySeenTsRef.current = hasTimestamp ? startedAt : -1;
+
+          if (anim.phase === "decision") {
+            if (animationClearTimerRef.current) {
+              clearTimeout(animationClearTimerRef.current);
+              animationClearTimerRef.current = null;
+            }
+            const yes = anim.kind === "juu" || anim.kind === "yes";
+            setOverlay({
+              visible: true,
+              bgColor: yes ? "#22c55e" : "#ef4444",
+              title: yes ? "To be continued" : "Break up",
+              subtitle: "",
+            });
+          } else if (anim.phase === "next") {
+            queueAnimationClear(
+              anim.startedAt,
+              Number(anim.durationMs) || NEXT_ANIM_DURATION,
+            );
+            setOverlay({
+              visible: true,
+              bgColor: "#906AFE",
+              title: `Next: ${anim.nextPlayerName || "-"}`,
+              subtitle: `Date ${anim.nextDateNumber || "-"}`,
+            });
+          }
+
+          setShowOverlay(true);
+          overlayX.setValue(screenW);
+          animateIn(overlayX).start();
+        }
       } else if (overlay.visible) {
         animateOutLeft(overlayX, () => {
           setOverlay((prev) =>
             prev.visible ? { ...prev, visible: false } : prev,
           );
           setShowOverlay(false);
+          overlaySeenTsRef.current = 0;
         });
       }
 
       if (!gameData.animation && animationClearTimerRef.current) {
         clearTimeout(animationClearTimerRef.current);
         animationClearTimerRef.current = null;
+      }
+      if (!gameData.animation) {
+        overlaySeenTsRef.current = 0;
       }
 
       // Navigate to Game End when the final round has completed
@@ -280,19 +297,26 @@ export default function GamePlay({ route, navigation }) {
     : 0;
   const revealActive =
     isRevealForThisTrait && acceptedTraits.length > 0 && revealShownCount > 0;
+  const revealVisible = revealActive && !overlay.visible && !showOverlay;
   const revealedTraits = useMemo(() => {
-    if (!revealActive) {
+    if (!revealVisible) {
       return [];
     }
     return acceptedTraits.slice(0, revealShownCount);
-  }, [acceptedTraits, revealActive, revealShownCount]);
-  const revealNextCount = revealActive
+  }, [acceptedTraits, revealVisible, revealShownCount]);
+  const revealNextCount = revealVisible
     ? Math.max(acceptedTraits.length - revealShownCount, 0)
     : 0;
 
   const decisionButtonsDisabled = decisionInProgress || !decisionReady;
   const decisionCountdownLabel =
     decisionCountdown !== null ? ` (${decisionCountdown}s)` : "";
+  const displayName = currentPlayer?.username || "Player";
+  const playerInitial = displayName.slice(0, 1).toUpperCase();
+  const totalAccepted = acceptedTraits.length;
+  const revealProgressLabel = totalAccepted
+    ? `${revealedTraits.length}/${totalAccepted} shown`
+    : "Accepted traits";
 
   const buildNextTraitUpdates = useCallback(() => {
     const traitPool = Array.isArray(gameState.traits)
@@ -370,14 +394,31 @@ export default function GamePlay({ route, navigation }) {
       return;
     }
 
-    const signature = `${currentTraitId}:${acceptedTraits.length}`;
+    const totalAccepted = acceptedTraits.length;
+    const signature = `${currentTraitId}:${totalAccepted}`;
+
+    if (overlay.visible || showOverlay) {
+      return;
+    }
+
     if (revealInitSignatureRef.current === signature) {
       return;
     }
-    revealInitSignatureRef.current = signature;
 
     const traitRevealRef = ref(database, `games/${gamepin}/traitReveal`);
-    const totalAccepted = acceptedTraits.length;
+
+    if (
+      gameState.traitReveal &&
+      gameState.traitReveal.traitId === currentTraitId &&
+      (Number(gameState.traitReveal?.shownCount) || 0) >= 1
+    ) {
+      revealInitSignatureRef.current = signature;
+      return;
+    }
+
+    if (!isCurrentUserTurn) {
+      return;
+    }
 
     const syncRevealState = async () => {
       try {
@@ -388,6 +429,7 @@ export default function GamePlay({ route, navigation }) {
           ) {
             await set(traitRevealRef, null);
           }
+          revealInitSignatureRef.current = signature;
           return;
         }
 
@@ -406,6 +448,8 @@ export default function GamePlay({ route, navigation }) {
         } else if ((Number(gameState.traitReveal?.shownCount) || 0) < 1) {
           await update(traitRevealRef, { shownCount: 1 });
         }
+
+        revealInitSignatureRef.current = signature;
       } catch (error) {
         console.warn("Failed to synchronise trait reveal:", error?.message);
       }
@@ -418,6 +462,9 @@ export default function GamePlay({ route, navigation }) {
     currentTraitId,
     gameState.traitReveal,
     gamepin,
+    overlay.visible,
+    showOverlay,
+    isCurrentUserTurn,
   ]);
 
   // Watch for trait change to animate the trait card
@@ -436,13 +483,12 @@ export default function GamePlay({ route, navigation }) {
   }, []);
 
   const handleRevealNext = useCallback(async () => {
-    if (!revealActive || !isCurrentUserTurn) {
+    if (!revealVisible || !isCurrentUserTurn) {
       return;
     }
 
-    if (revealCloseTimerRef.current) {
-      clearTimeout(revealCloseTimerRef.current);
-      revealCloseTimerRef.current = null;
+    if (gameState.traitReveal?.traitId !== currentTraitId) {
+      return;
     }
 
     const traitRevealRef = ref(database, `games/${gamepin}/traitReveal`);
@@ -468,15 +514,6 @@ export default function GamePlay({ route, navigation }) {
         shownCount: nextShown,
         updatedAt: Date.now(),
       });
-
-      if (nextShown >= totalCount) {
-        revealCloseTimerRef.current = setTimeout(() => {
-          set(traitRevealRef, null).catch((error) => {
-            console.warn("Failed to close trait reveal:", error?.message);
-          });
-          revealCloseTimerRef.current = null;
-        }, 700);
-      }
     } catch (error) {
       console.warn("Failed to progress trait reveal:", error?.message);
     }
@@ -485,15 +522,9 @@ export default function GamePlay({ route, navigation }) {
     gameState.traitReveal,
     gamepin,
     isCurrentUserTurn,
-    revealActive,
+    revealVisible,
+    currentTraitId,
   ]);
-
-  useEffect(() => {
-    if (!revealActive && revealCloseTimerRef.current) {
-      clearTimeout(revealCloseTimerRef.current);
-      revealCloseTimerRef.current = null;
-    }
-  }, [revealActive]);
 
   useEffect(() => {
     if (!isCurrentUserTurn || decisionInProgress) {
@@ -508,7 +539,7 @@ export default function GamePlay({ route, navigation }) {
       return;
     }
 
-    if (revealActive) {
+    if (revealVisible) {
       clearDecisionCountdown();
       setDecisionReady(false);
       return;
@@ -538,14 +569,14 @@ export default function GamePlay({ route, navigation }) {
     currentTraitId,
     decisionInProgress,
     isCurrentUserTurn,
-    revealActive,
+    revealVisible,
   ]);
 
   useEffect(() => {
     return () => {
-      if (revealCloseTimerRef.current) {
-        clearTimeout(revealCloseTimerRef.current);
-        revealCloseTimerRef.current = null;
+      if (nextPhaseTimeoutRef.current) {
+        clearTimeout(nextPhaseTimeoutRef.current);
+        nextPhaseTimeoutRef.current = null;
       }
       if (animationClearTimerRef.current) {
         clearTimeout(animationClearTimerRef.current);
@@ -586,7 +617,7 @@ export default function GamePlay({ route, navigation }) {
     const nextAccepted =
       choice === "juu"
         ? [...baseAccepted, gameState.currentTrait]
-        : baseAccepted;
+        : [];
 
     await update(playerRef, {
       acceptedTraits: nextAccepted,
@@ -600,32 +631,46 @@ export default function GamePlay({ route, navigation }) {
       nextPlayerIndex === 0
         ? gameState.currentRound + 1
         : gameState.currentRound;
+    const nextPlayer =
+      gameState.players[nextPlayerIndex] || null;
+    const nextPlayerName = nextPlayer?.username || "-";
+    const nextAcceptedLength = Array.isArray(nextPlayer?.acceptedTraits)
+      ? nextPlayer.acceptedTraits.length
+      : 0;
+    const nextDateNumber = nextAcceptedLength + 1;
+    const decisionStartedAt = Date.now();
 
-    await set(ref(database, `games/${gamepin}/animation`), {
-      phase: "decision",
-      kind: choice,
-      startedAt: Date.now(),
-    });
+    try {
+      await set(ref(database, `games/${gamepin}/animation`), {
+        phase: "decision",
+        kind: choice,
+        startedAt: decisionStartedAt,
+        durationMs: DECISION_ANIM_DURATION,
+      });
+    } catch (error) {
+      console.warn("Failed to update animation state:", error?.message);
+    }
+
+    if (nextPhaseTimeoutRef.current) {
+      clearTimeout(nextPhaseTimeoutRef.current);
+      nextPhaseTimeoutRef.current = null;
+    }
+
+    nextPhaseTimeoutRef.current = setTimeout(() => {
+      set(ref(database, `games/${gamepin}/animation`), {
+        phase: "next",
+        nextPlayerName,
+        nextDateNumber,
+        drink: false,
+        startedAt: Date.now(),
+        durationMs: NEXT_ANIM_DURATION,
+      }).catch((error) => {
+        console.warn("Failed to update animation state:", error?.message);
+      });
+      nextPhaseTimeoutRef.current = null;
+    }, DECISION_ANIM_DURATION);
 
     animateOutLeft(cardX, async () => {
-      try {
-        await set(ref(database, `games/${gamepin}/animation`), {
-          phase: "next",
-          nextPlayerName:
-            gameState.players[nextPlayerIndex]?.username || "-",
-          nextDateNumber:
-            (Array.isArray(
-              gameState.players[nextPlayerIndex]?.acceptedTraits,
-            )
-              ? gameState.players[nextPlayerIndex].acceptedTraits.length
-              : 0) + 1,
-          drink: choice === "ei",
-          startedAt: Date.now(),
-        });
-      } catch (error) {
-        console.warn("Failed to update animation state:", error?.message);
-      }
-
       const traitUpdates = buildNextTraitUpdates();
       const updates = {
         currentPlayerIndex: nextPlayerIndex,
@@ -725,7 +770,7 @@ export default function GamePlay({ route, navigation }) {
               gp.traitCard,
               {
                 transform: [{ translateX: cardX }],
-                opacity: revealActive ? 0 : 1,
+                opacity: revealVisible ? 0 : 1,
               },
             ]}
           >
@@ -754,12 +799,12 @@ export default function GamePlay({ route, navigation }) {
                 />
                 <Text style={gp.traitMetaText}>
                   {isCurrentUserTurn
-                    ? revealActive
+                    ? revealVisible
                       ? "Review your accepted traits"
                       : decisionCountdown !== null
                       ? `Decision unlocks in ${decisionCountdown}s`
                       : "Your call!"
-                    : revealActive
+                    : revealVisible
                     ? `Reviewing ${currentPlayer?.username || "the player"}'s choices`
                     : `Waiting for ${currentPlayer?.username || "the player"}`}
                 </Text>
@@ -888,23 +933,57 @@ export default function GamePlay({ route, navigation }) {
           </LinearGradient>
         </ScrollView>
 
-        {revealActive && (
+        {revealVisible && (
           <View style={gp.revealOverlayWrap}>
             <BlurView
-              intensity={70}
+              intensity={80}
               tint="dark"
               style={gp.revealBlur}
               pointerEvents="none"
             />
-            <View style={gp.revealCard}>
-              <Text style={gp.revealTitle}>
-                {currentPlayer?.username || "Player"}'s accepted traits
-              </Text>
+            <LinearGradient
+              colors={["rgba(81,112,255,0.97)", "rgba(255,102,196,0.95)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={gp.revealCard}
+            >
+              <View style={gp.revealHeader}>
+                <View style={gp.revealAvatar}>
+                  <Text style={gp.revealAvatarText}>{playerInitial}</Text>
+                </View>
+                <View style={gp.revealHeaderText}>
+                  <Text style={gp.revealPlayerName}>{displayName}</Text>
+                  <Text style={gp.revealPlayerSubtitle}>
+                    {revealProgressLabel}
+                  </Text>
+                </View>
+                <View style={gp.revealBadge}>
+                  <Ionicons
+                    name="ribbon-outline"
+                    size={16}
+                    color="#F8ECFF"
+                    style={gp.revealBadgeIcon}
+                  />
+                  <Text style={gp.revealBadgeText}>{totalAccepted}</Text>
+                </View>
+              </View>
+
+              <View style={gp.revealDivider} />
+
               <ScrollView
                 style={gp.revealList}
                 contentContainerStyle={gp.revealListContent}
                 showsVerticalScrollIndicator={false}
               >
+                <View style={gp.revealTag}>
+                  <Ionicons
+                    name="heart"
+                    size={16}
+                    color="#FF6BD8"
+                    style={gp.revealTagIcon}
+                  />
+                  <Text style={gp.revealTagText}>Date partner traits</Text>
+                </View>
                 {revealedTraits.map((trait, index) => (
                   <View key={trait.traitId || index} style={gp.revealItem}>
                     <View style={gp.revealIndexBubble}>
@@ -916,6 +995,7 @@ export default function GamePlay({ route, navigation }) {
                   </View>
                 ))}
               </ScrollView>
+
               <TouchableOpacity
                 activeOpacity={0.9}
                 style={[
@@ -926,23 +1006,30 @@ export default function GamePlay({ route, navigation }) {
                 disabled={!isCurrentUserTurn}
               >
                 <LinearGradient
-                  colors={["#68d1ff", "#5170ff"]}
+                  colors={["rgba(255,255,255,0.98)", "rgba(255,214,255,0.88)"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={gp.revealButtonGradient}
                 >
-                  <Text style={gp.revealButtonText}>
-                    {revealNextCount > 0 ? "Next" : "Continue"}
-                  </Text>
+                  <View style={gp.revealButtonContent}>
+                    <Text style={gp.revealButtonText}>
+                      {revealNextCount > 0 ? "Next trait" : "Show new trait"}
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward-outline"
+                      size={18}
+                      color="#362168"
+                      style={gp.revealButtonIcon}
+                    />
+                  </View>
                 </LinearGradient>
               </TouchableOpacity>
               {!isCurrentUserTurn && (
                 <Text style={gp.revealWaitingText}>
-                  Waiting for {currentPlayer?.username || "the player"} to
-                  continue
+                  Waiting for {displayName} to continue
                 </Text>
               )}
-            </View>
+            </LinearGradient>
           </View>
         )}
 
@@ -955,6 +1042,12 @@ export default function GamePlay({ route, navigation }) {
               },
             ]}
           >
+            <BlurView
+              intensity={70}
+              tint="dark"
+              style={gp.overlayBlur}
+              pointerEvents="none"
+            />
             <LinearGradient
               colors={
                 overlay.bgColor === "#22c55e"
@@ -1297,21 +1390,92 @@ const gp = StyleSheet.create({
     borderRadius: 28,
     paddingVertical: 30,
     paddingHorizontal: 24,
-    backgroundColor: "rgba(15,14,29,0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    shadowColor: "#0a071b",
+    backgroundColor: "rgba(12,11,30,0.52)",
+    borderWidth: 1.5,
+    borderColor: "rgba(245,240,255,0.22)",
+    shadowColor: "rgba(18,17,45,0.65)",
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.45,
     shadowRadius: 28,
     elevation: 16,
   },
-  revealTitle: {
-    color: "#F8ECFF",
-    fontSize: 20,
+  revealHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  revealTag: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(12,11,30,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  revealTagIcon: {
+    marginRight: 6,
+  },
+  revealTagText: {
+    color: "#FDF6FF",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  revealAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  revealAvatarText: {
+    color: "#E9F5FF",
+    fontSize: 22,
     fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 22,
+  },
+  revealHeaderText: {
+    flex: 1,
+  },
+  revealPlayerName: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  revealPlayerSubtitle: {
+    marginTop: 2,
+    color: "rgba(235,234,255,0.78)",
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  revealBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    marginLeft: 12,
+  },
+  revealBadgeIcon: {
+    marginRight: 4,
+  },
+  revealBadgeText: {
+    color: "#F8ECFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  revealDivider: {
+    marginVertical: 18,
+    height: 1,
+    backgroundColor: "rgba(248,236,255,0.32)",
   },
   revealList: {
     maxHeight: 240,
@@ -1328,7 +1492,7 @@ const gp = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(104,209,255,0.18)",
+    backgroundColor: "rgba(244,225,255,0.26)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -1340,8 +1504,8 @@ const gp = StyleSheet.create({
   },
   revealItemText: {
     flex: 1,
-    color: "rgba(245,242,255,0.95)",
-    fontSize: 16,
+    color: "rgba(255,252,255,0.95)",
+    fontSize: 18,
     fontWeight: "600",
   },
   revealButton: {
@@ -1360,14 +1524,21 @@ const gp = StyleSheet.create({
     justifyContent: "center",
   },
   revealButtonText: {
-    color: "#ffffff",
+    color: "#1f1459",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
   },
+  revealButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  revealButtonIcon: {
+    marginLeft: 10,
+  },
   revealWaitingText: {
     marginTop: 12,
-    color: "rgba(255,255,255,0.75)",
+    color: "rgba(248,236,255,0.82)",
     fontSize: 13,
     textAlign: "center",
   },
@@ -1378,12 +1549,17 @@ const gp = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 20,
-    paddingHorizontal: 28,
     alignItems: "center",
     justifyContent: "center",
   },
+  overlayBlur: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(10,9,22,0.55)",
+  },
   overlayCard: {
-    width: "100%",
+    width: "86%",
+    maxWidth: 420,
+    marginHorizontal: 28,
     borderRadius: 28,
     paddingVertical: 32,
     paddingHorizontal: 24,
