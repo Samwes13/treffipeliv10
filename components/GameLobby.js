@@ -7,6 +7,7 @@ import {
   Image,
   ActivityIndicator,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -27,6 +28,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 const INITIAL_ANIMATION_DURATION_MS = 4000;
 const GAME_START_COUNTDOWN_MS = 4000;
+const ANDROID_INTERSTITIAL_AD_UNIT = "ca-app-pub-7869485729301293/9203602714";
+const IOS_INTERSTITIAL_AD_UNIT = "ca-app-pub-7869485729301293/5683769226";
 
 export default function GameLobby({ route, navigation }) {
   const { username, gamepin } = route.params;
@@ -101,7 +104,9 @@ export default function GameLobby({ route, navigation }) {
           await loadGoogleMobileAds();
         const adUnitId = __DEV__
           ? TestIds.INTERSTITIAL
-          : "ca-app-pub-7869485729301293/9203602714";
+          : Platform.OS === "ios"
+            ? IOS_INTERSTITIAL_AD_UNIT
+            : ANDROID_INTERSTITIAL_AD_UNIT;
         interstitial = InterstitialAd.createForAdRequest(adUnitId, {
           requestNonPersonalizedAdsOnly: true,
         });
@@ -581,7 +586,7 @@ export default function GameLobby({ route, navigation }) {
             />
             <Text style={localStyles.footerHintText}>
               {countdownActive
-                ? "Countdown in progress — get ready!"
+                ? "Countdown in progress â€” get ready!"
                 : allPlayersReady
                 ? "Everyone is ready! Start the game whenever you like."
                 : "Waiting for players to finish prepping before we begin."}

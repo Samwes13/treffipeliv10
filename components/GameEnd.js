@@ -20,6 +20,8 @@ import { useFocusEffect } from "@react-navigation/native";
 //import AdSenseBanner from './AdSenseBanner'; // Tuo AdSense-komponentti
 
 let WebBannerAd = null;
+const ANDROID_INTERSTITIAL_AD_UNIT = "ca-app-pub-7869485729301293/9203602714";
+const IOS_INTERSTITIAL_AD_UNIT = "ca-app-pub-7869485729301293/5683769226";
 if (Platform.OS === "web") {
   try {
     WebBannerAd = require("./WebBannerAd.web").default;
@@ -144,7 +146,9 @@ export default function GameEnd({ route, navigation }) {
           await loadGoogleMobileAds();
         const adUnitId = __DEV__
           ? TestIds.INTERSTITIAL
-          : "ca-app-pub-7869485729301293/9203602714"; // GameEnd interstitial (production)
+          : Platform.OS === "ios"
+            ? IOS_INTERSTITIAL_AD_UNIT
+            : ANDROID_INTERSTITIAL_AD_UNIT; // GameEnd interstitial (production)
         interstitial = InterstitialAd.createForAdRequest(adUnitId, {
           requestNonPersonalizedAdsOnly: true,
         });

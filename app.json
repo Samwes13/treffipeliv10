@@ -26,7 +26,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "fi.treffipeli.app"
+      "package": "com.anonymous.treffipelimobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -36,7 +36,7 @@
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-7869485729301293~3229259295",
-          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+          "iosAppId": "ca-app-pub-7869485729301293~6657802527"
         }
       ]
     ],

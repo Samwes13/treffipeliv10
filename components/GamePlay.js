@@ -22,6 +22,12 @@ import { database } from "../firebaseConfig";
 const screenW = Dimensions.get("window").width || 360;
 const DECISION_ANIM_DURATION = 2000;
 const NEXT_ANIM_DURATION = 2000;
+const androidBlurProps =
+  Platform.OS === "android"
+    ? {
+        experimentalBlurMethod: "dimezisBlurView",
+      }
+    : {};
 
 export default function GamePlay({ route, navigation }) {
   const { gamepin, username } = route.params;
@@ -134,6 +140,22 @@ export default function GamePlay({ route, navigation }) {
     });
   }, [navigation, username]);
 
+  const navigateToGameEnd = useCallback(() => {
+    if (navigatedAwayRef.current) {
+      return;
+    }
+    navigatedAwayRef.current = true;
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: "GameEnd",
+          params: { username, gamepin },
+        },
+      ],
+    });
+  }, [gamepin, navigation, username]);
+
   // Preload the drink sound once
   useEffect(() => {
     (async () => {
@@ -222,7 +244,7 @@ export default function GamePlay({ route, navigation }) {
 
       const finalRoundReached = (gameData.currentRound || 0) > 6;
       if (finalRoundReached) {
-        navigateToOptions();
+        navigateToGameEnd();
         unsubscribe();
         return;
       }
@@ -299,6 +321,7 @@ export default function GamePlay({ route, navigation }) {
     return () => unsubscribe();
   }, [
     gamepin,
+    navigateToGameEnd,
     navigateToOptions,
     overlay.visible,
     overlayX,
@@ -1204,6 +1227,7 @@ export default function GamePlay({ route, navigation }) {
             <BlurView
               intensity={80}
               tint="dark"
+              {...androidBlurProps}
               style={gp.revealBlur}
               pointerEvents="none"
             />
@@ -1311,6 +1335,7 @@ export default function GamePlay({ route, navigation }) {
             <BlurView
               intensity={70}
               tint="dark"
+              {...androidBlurProps}
               style={gp.overlayBlur}
               pointerEvents="none"
             />
