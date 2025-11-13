@@ -1,0 +1,91 @@
+Mita olen oppinut Treffipelin rakenteesta
+=========================================
+
+1. Kokonaisarkkitehtuuri
+-----------------------
+- Sovellus on rakennettu React Native + Expo -pohjalle. App.js maarittelee NavigationContainerin, createNativeStackNavigatorin, deep-linking -prefiksit ja SafeAreaProviderin. Kaikki ruudut (EnterUsername -> GameOptionScreen -> CardTraits -> GameLobby -> GamePlay -> GameEnd + JoinGame ja DebugSimulate) asuvat components/-hakemistossa.
+- Firebase Realtime Database toimii taustapalveluna. firebaseConfig.js alustaa SDK:n ja vie `database`-instanssin, jota ruudut kayttavat ref/get/set/update/push/remove/onValue -kutsuilla.
+- Expo-moduulit tuovat gradientit, varityksen, fonttilatauksen, Ionicons-kuvakkeet, StatusBar-ohjauksen, audio- ja blur-efektit. app.json asettaa nimet, ikonit ja AdMob-pluginin.
+- Mainonta: react-native-google-mobile-ads hoitaa interstitiaali-mainokset (GameLobby/GameEnd), utils/googleMobileAds.* huolehtii dynaamisesta importista ja Platform-tarkistuksista. Webissa WebBannerAd.web.js upottaa AdSense-bannereita EXPO_PUBLIC_ADSENSE_* -muuttujilla.
+- Tyylit on keskitetty styles.js:aan, jota ruudut taydentavat omilla StyleSheet-olioilla.
+
+2. Teknologiapino
+----------------
+- React Hooks: useState, useEffect, useMemo, useRef, useCallback, useFocusEffect, useWindowDimensions, useSafeAreaInsets.
+- React Navigation: stack navigator, navigation.navigate/reset/goBack, route.params, deep-linking.
+- Firebase-API:t: ref, set, update, push, remove, get, child, onValue, runTransaction.
+- Expo/React Native komponentit: SafeAreaView, LinearGradient, ScrollView, FlatList, Modal, Animated, BlurView, KeyboardAvoidingView, TextInput, Ionicons.
+- Mainontakomponentit: InterstitialAd, AdEventType, TestIds, requestNonPersonalizedAdsOnly, WebBannerAd (AdSense).
+- Dev-tyokalut: scripts/clean-local-properties.js poistaa turhat local.properties -tiedostot; package.json skriptit (expo start/run, web-export, postinstall-cleanup).
+
+3. Kayttopolku
+--------------
+1. EnterUsername: kayttaja syottaa tai arpoo nimimerkin. Tallennus users/-haaraan push-avaimella ja kahden tunnin TTL-ajastimella.
+2. GameOptionScreen: nayttaa tervehdyskortin, mahdollistaa pelin luonnin (new games/{pin}) tai JoinGame-nakyman.
+3. JoinGame: validoi kuusimerkkisen PIN-koodin, tarkistaa pelin olemassaolon, luo players/{username}-solmun ja ohjaa CardTraitsiin.
+4. CardTraits: jokainen tayttaa 6 traittia; komponentti tarkistaa duplikaatit, tarjoaa valmiit esimerkit ja tallentaa games/{pin}/traits/{username}-polulle.
+5. GameLobby: host seuraa pelaajalistaa, voi poistaa pelaajia ModalAlertilla, nayttaa countdownin ja alustaa pelin (piirteiden shuffle, currentTrait, usedTraits, currentPlayerIndex, currentRound, isGameStarted). Taalla naytetaan interstitiaali-mainos.
+6. GamePlay: varsinainen pelimoottori. Lukee games/{pin}-tilan, nayttaa traittikortin animaatioilla, kaynnistaa audio-efekteja ja kirjoittaa paatokset players/{username}-solmuun seka animation-haaraan.
+7. GameEnd: laskee tilastot (accepted, treffit, skipCount), nayttaa leaderboardit, blokkaa back-napin, poistaa pelin 5 min kuluttua ja nayttaa mainokset (AdSense webissa, interstitiaali mobiilissa).
+8. DebugSimulate: kehitystyokalu, joka siementaa peleja bot-nimilla utils/debugSeed.js:n avulla.
+
+4. Komponentit ja niiden logiikka
+---------------------------------
+- App.js: lataa Ionicons-fontit, asettaa linking-prefixit (https://treffipeli.fi ja treffipeli://), maarittaa navigatorin, StatusBarin ja nav-teeman. useEffect alustaa Google Mobile Ads -SDK:n natiivialustoilla ja ohittaa sen Expo Go/web -ymparistoissa.
+- EnterUsername.js: hallitsee tekstinsyoton ja satunnaiset nimiehdotukset, validoi minimipituuden ja nayttaa virheet ModalAlertilla. saveUsername luo push-avaimen users/-oksaan ja ajastaa remove-kutsun TTL:n paassa.
+- GameOptionScreen.js: nayttaa GameRules-modalin, luo uuden pelin update(ref(database, games/{pin})) -kutsulla (host flag players-objektissa) tai vie JoinGameen.
+- JoinGame.js: kayttaa useMemoa pin-validointiin, nayttaa progressin, hakee pelin get(child(...)) -kutsulla ja kirjoittaa pelaajaobjektin (username, traits: [], isHost: false).
+- CardTraits.js: pita trait-taulukon state:ssa, laskee trimmed/duplicate/complete -tiedot useMemolla, tarjoaa AutoFill-nappia ja tallentaa traitit push-avaimilla. loadExistingTraits hakee tallennetut rivit jos ruutu avataan uudelleen.
+- GameLobby.js: tilaa onValue kuuntelijan `games/{pin}`-solmuun, paivittaa pelaajat, host-statuksen, countdownin ja game start -lipun. Host voi poistaa pelaajan (remove(ref(...))) ja kaynnistaa pelin: lukee kaikkien traitit, shufflettaa ne yhdeksi jonoksi ja paivittaa games/{pin}-solmun starttiarvot. FlatList piirtAA pelaajat, countdown overlay nayttaa 3-2-1-GO!-animaation ja interstitiaali ladataan Platform-kohtaisten mainosyksikkojen avulla.
+- GamePlay.js: tilassa on gameState (players, traits, usedTraits, currentTrait, currentRound, currentPlayerIndex). Animated.Value pito cardX/overlayX arvoista; BlurView + overlay-tila nayttaa ohjeita; expo-av tuo drinkSoundin. handleDecision paivittaa accepted/keep/skip -laskurit, asettaa animation-phase = decision -> next, animateOutLeft liuttaa kortin ja update(ref(database, games/{pin})) vie seuraavan traitin perille. navigateToOptions/GameEnd resetoi navigation pinon jotta historia ei rikkoudu. handleRevealNext kaynnistaa hostille "valmis seuraavaan" -logiikan.
+- GameEnd.js: kayttaa useMemoa rankkien laskentaan (longestLeaders, skipLeaders, highlightStats), blokkaa backin useFocusEffectilla, poistaa pelin ajastimella ja nayttaa mainokset (Platform.OS valitsee AdMob ID:t). Webissa naytetaan WebBannerAd jos client/slot on asetettu.
+- GameRules.js: staattinen ScrollView, joka selittaa pelin kulun.
+- DebugSimulate.js + utils/debugSeed.js: generoi bot-nimia ja traitteja, siementaa pelin set/ref -kutsuilla, seuraa tilaa log-funktiolla ja pystyy tekemaan koeajoja ilman oikeita pelaajia.
+- ModalAlert.js: yleiskayttoinen Modal, jossa gradienttiheaderi, otsikko, viesti ja nappilista. Sulkeutuu aina kun nappia painetaan.
+- WebBannerAd.web.js: luo AdSense-skriptin kerran, pushaa `window.adsbygoogle` -jonoon ja palauttaa `<ins>`-elementin. Jos client/slot puuttuu, palauttaa null.
+- styles.js: yhteiset gradient-taustat, blob-elementit, napit, modalien taustat ja muut reused-tyylit.
+- firebaseConfig.js: configureoi Firebase-sovelluksen (projektin tunnukset + Realtime Database URL) ja vie getDatabase(app) -tuloksen.
+- utils/googleMobileAds.native.js: sallii SDK:n vain kun Platform.OS ei ole web ja Constants.appOwnership ei ole expo. Web-versio heittaa virheen muistutuksena ettei mainoksia voi sanoa selaimessa.
+- scripts/clean-local-properties.js: rekursiivinen Node-skripti, joka poistaa node_modules/android -hakemusten local.properties -tiedostot, jotta Gradle ei lue vahingossa paikallisia SDK-polkuja CI-ymparistossa.
+
+5. Firebase-tietomalli ja suojaus
+---------------------------------
+- games/{pin}: host, isGameStarted, currentTrait, currentRound, currentPlayerIndex, usedTraits[], countdown-objekti, animation-tila, players- ja traits-alipuut.
+- players/{username}: username, isHost, traitsCompleted, acceptedTraits[], keepCount, skipCount jne.
+- traits/{username}/{pushKey}: traitId, text, order.
+- users/: EnterUsername tallentaa nimimerkkeja valiaikaisesti ja poistaa ne TTL:n jalkeen.
+- Turvallisuus: Realtime Database -saannot ovat viela public, joten seuraava askel on ottaa Firebase Authenticationin anonymous login kayttoon ja rajata luku/kirjoitus memberships/{pin}/{uid} -rakenteen perusteella.
+
+6. Expo ja EAS -asetukset
+-------------------------
+- app.json: nimi, ikonit, splash, bundleIdentifier (iOS), Android package, Android versionCode=12, plugins -> react-native-google-mobile-ads (androidAppId + iosAppId), infoPlist -> ITSAppUsesNonExemptEncryption=false.
+- eas.json: maarittaa CLI-version (>=16.19.1) ja build-profiilit (development preview production) seka submit-profiilin.
+- package.json: Expo 53, React 19, React Native 0.79, firebase 12, react-native-google-mobile-ads 14, patch-package, dev-skriptit.
+
+7. Symboli- ja syntaksisanasto
+------------------------------
+- `$pin`, `$uid`: Firebase-saantojen wildcardit, joiden arvoon viitataan ehdoissa.
+- `? :`: ternary-operaattori (condition ? trueValue : falseValue).
+- `?.`: optional chaining, pysayttaa arvonlukuun jos vasen osa on null.
+- `??`: nullish coalescing, antaa oletusarvon vain jos vasen on null/undefined.
+- `&&`: looginen JA ja Reactin ehtorenderointi.
+- `||`: looginen TAI, kaytetaan myos oletusarvoihin.
+- `!` ja `!!`: looginen NOT, kaksinkertainen versio pakottaa booleaniksi.
+- `===` / `!==`: tiukka vertailu, jota kaytetaan melkein kaikkialla.
+- `=>`: arrow-funktio, esim. `const removePlayer = () => { ... }`.
+- `...`: spread/rest, kopioi olion/taulukon tai ker?? loput argumentit.
+- `{}` ja `[]`: olio- ja taulukkoliteraalit, destructurointi, JSX-prop-listat.
+- `navigation`: React Navigation -prop, josta loytyy navigate/reset/goBack.
+- `route.params`: reitin parametrit, esim. { username, gamepin }.
+- `async/await`: helpottaa Firebase-kutsujen ketjutusta (`await update(ref(...), data)`).
+- `import` / `export default`: JS-moduulijarjestelma komponenttien jakeluun.
+- `useEffect(() => {...}, [deps])`: elinkaarikoukku tilaajien rekisterointiin ja siivoukseen.
+- `useMemo`, `useCallback`, `useRef`: suorituskykya auttavat koukut (memoidut arvot, funktiot, pysyvat viitteet).
+- `setTimeout`, `setInterval`: ajastimet (countdownit, retryt, TTL-poistot).
+- `ref`, `set`, `update`, `push`, `remove`, `get`, `child`, `onValue`, `runTransaction`: Firebase Realtime Database -operaatiot.
+- `StyleSheet.create`, `LinearGradient`, `FlatList`, `ScrollView`, `KeyboardAvoidingView`, `Modal`, `Animated`, `BlurView`: React Native/Expo UI-palikat.
+- `requestNonPersonalizedAdsOnly`, `Platform.OS`, `__DEV__`, `TestIds`: mainonnen konfigurointi ja kehitystilat.
+
+8. Yhteenveto
+-------------
+Treffipeli rakentuu kerroksittain: Expo hallitsee alustaa, React Navigation ohjaa kayttopolkuja, Firebase toimii reaaliaikaisena tietovarastona ja React Hooks pitaa UI:n synkassa. Jokainen komponentti hoitaa yhden vaiheen (nimi -> vaihtoehdot -> koodi -> traitit -> lobby -> peli -> tulokset). Mainoslogiikka on kapseloitu utils-kerrokseen ja web saa oman AdSense-komponentin. DebugSimulate + utils/debugSeed nopeuttavat testausta. Seuraavat isommat tyot ovat Firebase-saantojen koventaminen (anonymous auth + memberships), mahdollinen UID-pohjainen pelaajaidentiteetti ja jatkokehitys EAS-buildiketjussa.
