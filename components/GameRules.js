@@ -1,60 +1,73 @@
 import React from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export default function GameRules() {
+  const { t } = useLanguage();
+
+  const gettingStarted = [
+    "Each player writes 3 good and 3 challenging traits about a fictional date partner.",
+    "Make sure every player finishes entering their traits before you start.",
+    "Only the host (creator) can start the game countdown.",
+  ];
+
+  const howItWorks = [
+    "The game has 6 rounds and cycles through every player.",
+    "Each round reveals one random trait for the current player.",
+    'Decision: "Keep" adds the trait to your Accepted list; "Skip" clears the list and starts fresh.',
+  ];
+
+  const bonusChallenges = [
+    "On dates 1, 3, 5, and 6, add a fun twist about how the trait might play out.",
+    "Whoever drew the trait explains how they would handle it on that date.",
+    'If you tap "Skip", come up with a dramatic excuse for ending the date.',
+  ];
+
   return (
     <ScrollView contentContainerStyle={s.container}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={s.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
-        <Text style={s.headerTitle}>Treffipeli Rules</Text>
-        <Text style={s.headerSubtitle}>Quick guide to playing</Text>
+        <Text style={s.headerTitle}>{t("Treffipeli Rules")}</Text>
+        <Text style={s.headerSubtitle}>{t("Quick guide to playing")}</Text>
       </LinearGradient>
 
       <View style={s.card}>
-        <Text style={s.cardTitle}>Getting Started</Text>
-        <Text style={s.bullet}>
-          • Each player writes 3 good and 3 bad traits about a fictional date
-          partner.
-        </Text>
-        <Text style={s.bullet}>
-          • Start the game when everyone has finished entering traits.
-        </Text>
-        <Text style={s.bullet}>• The host (creator) starts the game.</Text>
+        <Text style={s.cardTitle}>{t("Getting Started")}</Text>
+        {gettingStarted.map((line) => (
+          <Text key={line} style={s.bullet}>
+            - {t(line)}
+          </Text>
+        ))}
       </View>
 
       <View style={s.card}>
-        <Text style={s.cardTitle}>How It Works</Text>
-        <Text style={s.bullet}>• The game has 6 rounds.</Text>
-        <Text style={s.bullet}>
-          • Each round shows a random trait to the current player.
-        </Text>
-        <Text style={s.bullet}>
-          • Decision: "Yes" adds the trait to your Accepted list. "No" clears
-          your Accepted list.
-        </Text>
+        <Text style={s.cardTitle}>{t("How It Works")}</Text>
+        {howItWorks.map((line) => (
+          <Text key={line} style={s.bullet}>
+            - {t(line)}
+          </Text>
+        ))}
       </View>
 
       <View style={s.cardAlt}>
-        <Text style={s.cardTitleAlt}>Bonus Challenges</Text>
-        <Text style={s.bulletAlt}>
-          • On dates 1, 3, 5, and 6: share a fun twist about how the trait could play out.
-        </Text>
-        <Text style={s.bulletAlt}>
-          • The player who received the trait describes how they would handle it on the date.
-        </Text>
-        <Text style={s.bulletAlt}>
-          • On a "No" decision: come up with a dramatic excuse for ending the date.
-        </Text>
+        <Text style={s.cardTitleAlt}>{t("Bonus Challenges")}</Text>
+        {bonusChallenges.map((line) => (
+          <Text key={line} style={s.bulletAlt}>
+            - {t(line)}
+          </Text>
+        ))}
       </View>
 
       <View style={s.note}>
-        <Text style={s.noteTitle}>Reminder</Text>
-        <Text style={s.noteText}>Enjoy the game and keep the vibe friendly!</Text>
+        <Text style={s.noteTitle}>{t("Reminder")}</Text>
+        <Text style={s.noteText}>
+          {t("Enjoy the game and keep the vibe friendly!")}
+        </Text>
       </View>
     </ScrollView>
   );
@@ -141,3 +154,5 @@ const s = StyleSheet.create({
     fontSize: 15,
   },
 });
+
+

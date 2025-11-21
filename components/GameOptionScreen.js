@@ -19,12 +19,22 @@ import { database } from "../firebaseConfig";
 import styles from "../styles";
 import GameRules from "./GameRules";
 import { LinearGradient } from "expo-linear-gradient";
+import { useLanguage } from "../contexts/LanguageContext";
+import LanguageToggle from "./LanguageToggle";
+import { toUserKey } from "../utils/userKey";
+import theme from "../utils/theme";
+import getLogoSource from "../utils/logo";
 
 export default function GameOptionsScreen({ route, navigation }) {
   const rawUsername = route.params?.username ?? "";
   const trimmedUsername = rawUsername.trim();
   const playerName = trimmedUsername || rawUsername;
-  const displayName = capitaliseFirstLetter(trimmedUsername || "pelaaja");
+  const { t, language } = useLanguage();
+  const logoSource = getLogoSource(language);
+  const fallbackDisplayName = t("player");
+  const displayName = capitaliseFirstLetter(
+    trimmedUsername || fallbackDisplayName,
+  );
 
   const [showRules, setShowRules] = useState(false);
   const { height } = useWindowDimensions();
@@ -45,13 +55,15 @@ export default function GameOptionsScreen({ route, navigation }) {
     }
 
     const gamepin = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const usernameKey = toUserKey(playerName);
     update(ref(database, `games/${gamepin}`), {
       host: playerName,
       gamepin: gamepin,
       isGameStarted: false,
       players: {
-        [playerName]: {
+        [usernameKey]: {
           username: playerName,
+          usernameKey,
           traits: [],
           isHost: true,
         },
@@ -73,7 +85,7 @@ export default function GameOptionsScreen({ route, navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={theme.backgroundGradient}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -95,12 +107,16 @@ export default function GameOptionsScreen({ route, navigation }) {
           <View style={localStyles.modalBackdrop}>
             <View style={localStyles.modalPanel}>
               <View style={localStyles.modalHeader}>
-                <Text style={localStyles.modalTitle}>Game Rules</Text>
+                <Text style={localStyles.modalTitle}>{t("Game Rules")}</Text>
                 <TouchableOpacity
                   style={localStyles.modalCloseButton}
                   onPress={() => setShowRules(false)}
                 >
-                  <Ionicons name="close" size={22} color="#5D4E88" />
+                  <Ionicons
+                    name="close"
+                    size={22}
+                    color={theme.helperText}
+                  />
                 </TouchableOpacity>
               </View>
               <View style={localStyles.modalBody}>
@@ -119,30 +135,34 @@ export default function GameOptionsScreen({ route, navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={localStyles.content}>
-            <Image
-              source={require("../assets/logoNew.png")}
-              style={localStyles.logo}
-            />
+            <View style={localStyles.topBar}>
+              <LanguageToggle />
+            </View>
+              <Image source={logoSource} style={localStyles.logo} />
 
             <View style={localStyles.hero}>
               <View style={localStyles.heroBadge}>
                 <Ionicons name="heart" size={16} color="#FFE5FF" />
                 <Text style={localStyles.heroBadgeText}>
-                  The best games happen together
+                  {t("The best games happen together")}
                 </Text>
               </View>
-              <Text style={localStyles.heroTitle}>Hey {displayName}!</Text>
+              <Text style={localStyles.heroTitle}>
+                {t("Hey {{name}}!", { name: displayName })}
+              </Text>
             </View>
 
             <LinearGradient
-              colors={["rgba(255,255,255,0.82)", "rgba(255,255,255,0.55)"]}
+              colors={theme.cardFrameGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={localStyles.cardGradient}
             >
               <View style={localStyles.card}>
                 <View style={localStyles.cardHeader}>
-                  <Text style={localStyles.cardTitle}>Game Options</Text>
+                  <Text style={localStyles.cardTitle}>
+                    {t("Game Options")}
+                  </Text>
                 </View>
 
                 <TouchableOpacity
@@ -151,7 +171,7 @@ export default function GameOptionsScreen({ route, navigation }) {
                   onPress={createGame}
                 >
                   <LinearGradient
-                    colors={["#906AFE", "#ff66c4"]}
+                    colors={theme.primaryButtonGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={localStyles.primaryActionGradient}
@@ -159,11 +179,12 @@ export default function GameOptionsScreen({ route, navigation }) {
                     <View style={localStyles.primaryActionContent}>
                       <View style={localStyles.actionTextBlock}>
                         <Text style={localStyles.actionTitle}>
-                          Create a New Game
+                          {t("Create a New Game")}
                         </Text>
                         <Text style={localStyles.actionSubtitle}>
-                          Receive a unique code and jump straight into card
-                          selection.
+                          {t(
+                            "Receive a unique code and jump straight into card selection.",
+                          )}
                         </Text>
                       </View>
                       <View style={localStyles.actionIcon}>
@@ -185,17 +206,19 @@ export default function GameOptionsScreen({ route, navigation }) {
                   <View style={localStyles.secondaryActionRow}>
                     <View style={localStyles.actionTextBlock}>
                       <Text style={localStyles.secondaryActionTitle}>
-                        Join an Existing Game
+                        {t("Join an Existing Game")}
                       </Text>
                       <Text style={localStyles.secondaryActionSubtitle}>
-                        Enter the code your friend shares on the next screen.
+                        {t(
+                          "Enter the code your friend shares on the next screen.",
+                        )}
                       </Text>
                     </View>
                     <View style={localStyles.secondaryIcon}>
                       <Ionicons
                         name="people-outline"
                         size={24}
-                        color="#2563EB"
+                        color={theme.accentSecondary}
                       />
                     </View>
                   </View>
@@ -204,13 +227,16 @@ export default function GameOptionsScreen({ route, navigation }) {
                 <View style={localStyles.cardFooter}>
                   <TouchableOpacity
                     activeOpacity={0.88}
-                    style={[localStyles.utilityButton, localStyles.utilityButtonSpacer]}
+                    style={[
+                      localStyles.utilityButton,
+                      localStyles.utilityButtonSpacer,
+                    ]}
                     onPress={() => setShowRules(true)}
                     accessible
-                    accessibilityLabel="View game rules"
+                    accessibilityLabel={t("View game rules")}
                   >
                     <LinearGradient
-                      colors={["#7c3aed", "#4c1d95"]}
+                      colors={theme.primaryButtonGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={localStyles.utilityButtonInner}
@@ -223,10 +249,10 @@ export default function GameOptionsScreen({ route, navigation }) {
                     style={localStyles.utilityButton}
                     onPress={handleMissingName}
                     accessible
-                    accessibilityLabel="Change username"
+                    accessibilityLabel={t("Change username")}
                   >
                     <LinearGradient
-                      colors={["#0ea5e9", "#0369a1"]}
+                      colors={theme.secondaryButtonGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={localStyles.utilityButtonInner}
@@ -240,10 +266,11 @@ export default function GameOptionsScreen({ route, navigation }) {
             </LinearGradient>
 
             <View style={localStyles.footer}>
-              <Text style={localStyles.footerTitle}>Tip</Text>
+              <Text style={localStyles.footerTitle}>{t("Tip")}</Text>
               <Text style={localStyles.footerText}>
-                Encourage everyone to read their card aloud—it keeps the round
-                relaxed and fun.
+                {t(
+                  "Encourage everyone to read their card aloud - it keeps the round relaxed and fun.",
+                )}
               </Text>
             </View>
           </View>
@@ -294,6 +321,11 @@ const localStyles = StyleSheet.create({
     width: "100%",
     maxWidth: 520,
     alignItems: "center",
+  },
+  topBar: {
+    width: "100%",
+    alignItems: "flex-end",
+    marginBottom: 12,
   },
   logo: {
     height: 110,
@@ -357,13 +389,13 @@ const localStyles = StyleSheet.create({
   cardTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#221641",
+    color: theme.bodyText,
   },
   cardDescription: {
     marginTop: 8,
     fontSize: 15,
     lineHeight: 22,
-    color: "#554876",
+    color: theme.bodyMuted,
   },
   primaryAction: {
     borderRadius: 22,
@@ -406,8 +438,8 @@ const localStyles = StyleSheet.create({
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
-    borderColor: "rgba(59, 130, 246, 0.35)",
-    backgroundColor: "rgba(59, 130, 246, 0.12)",
+    borderColor: theme.accentMutedBorder,
+    backgroundColor: theme.accentMuted,
   },
   secondaryActionRow: {
     flexDirection: "row",
@@ -416,20 +448,20 @@ const localStyles = StyleSheet.create({
   secondaryActionTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#1E3A8A",
+    color: theme.metaLabel,
   },
   secondaryActionSubtitle: {
     marginTop: 6,
     fontSize: 14,
     lineHeight: 20,
-    color: "rgba(37, 99, 235, 0.75)",
+    color: "rgba(255, 145, 77, 0.75)",
   },
   secondaryIcon: {
     marginLeft: 12,
     width: 40,
     height: 40,
     borderRadius: 16,
-    backgroundColor: "rgba(59, 130, 246, 0.18)",
+    backgroundColor: theme.accentMuted,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -484,7 +516,7 @@ const localStyles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(8, 4, 24, 0.68)",
+    backgroundColor: theme.modalBackdrop,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
@@ -512,7 +544,7 @@ const localStyles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#221641",
+    color: theme.bodyText,
   },
   modalCloseButton: {
     width: 34,
@@ -520,7 +552,7 @@ const localStyles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(144, 106, 254, 0.14)",
+    backgroundColor: theme.accentMuted,
   },
   modalBody: {
     maxHeight: 520,
@@ -535,3 +567,5 @@ function capitaliseFirstLetter(value) {
 
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
+
+

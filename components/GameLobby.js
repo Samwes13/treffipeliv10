@@ -7,7 +7,6 @@ import {
   Image,
   ActivityIndicator,
   StyleSheet,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -21,10 +20,13 @@ import {
 } from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
-import { canUseMobileAds, loadGoogleMobileAds } from "../utils/googleMobileAds";
 import { LinearGradient } from "expo-linear-gradient";
 import ModalAlert from "./ModalAlert";
 import { Ionicons } from "@expo/vector-icons";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toUserKey } from "../utils/userKey";
+import getLogoSource from "../utils/logo";
+import useInterstitialAd from "../hooks/useInterstitialAd";
 
 const INITIAL_ANIMATION_DURATION_MS = 4000;
 const GAME_START_COUNTDOWN_MS = 4000;
@@ -43,6 +45,10 @@ export default function GameLobby({ route, navigation }) {
   const [countdownStep, setCountdownStep] = useState(null);
   const [countdownActive, setCountdownActive] = useState(false);
   const hasNavigatedRef = useRef(false);
+  const { t, language } = useLanguage();
+  const logoSource = getLogoSource(language);
+  const goLabel = t("GO!");
+  const usernameKey = useMemo(() => toUserKey(username), [username]);
 
   useEffect(() => {
     const gameRef = ref(database, `games/${gamepin}`);
@@ -55,23 +61,35 @@ export default function GameLobby({ route, navigation }) {
         return;
       }
 
-      const playerList = Object.values(gameData.players || {});
+      const playerList = Object.entries(gameData.players || {}).map(
+        ([key, value]) => {
+          const data = value || {};
+          const safeKey = data.usernameKey || key;
+          const displayName = data.username || safeKey;
+          return {
+            ...data,
+            username: displayName,
+            usernameKey: safeKey,
+          };
+        },
+      );
       setPlayers(playerList);
 
-      const currentPlayer = playerList.find(
-        (player) => player.username === username,
-      );
+      const currentPlayer =
+        playerList.find((player) => player.username === username) ||
+        playerList.find(
+          (player) =>
+            (player.usernameKey || toUserKey(player.username)) === usernameKey,
+        );
 
       if (!currentPlayer) {
         navigation.navigate("GameOptionScreen", { username });
         return;
       }
 
-      if (gameData.players[username]?.isHost) {
-        setIsHost(true);
-      } else {
-        setIsHost(false);
-      }
+      const playerEntry =
+        gameData.players?.[usernameKey] || gameData.players?.[username];
+      setIsHost(!!playerEntry?.isHost);
 
       if (gameData.isGameStarted) {
         setIsGameStarted(true);
@@ -85,86 +103,16 @@ export default function GameLobby({ route, navigation }) {
     });
 
     return () => unsubscribe();
-  }, [gamepin, username, navigation]);
+  }, [gamepin, username, usernameKey, navigation]);
 
-  useEffect(() => {
-    let interstitial;
-    let unsubscribers = [];
-    let didShow = false;
-    let retried = false;
-
-    (async () => {
-      if (!canUseMobileAds) {
-        console.log("Lobby interstitial skipped: unsupported platform");
-        return;
-      }
-
-      try {
-        const { InterstitialAd, TestIds, AdEventType } =
-          await loadGoogleMobileAds();
-        const adUnitId = __DEV__
-          ? TestIds.INTERSTITIAL
-          : Platform.OS === "ios"
-            ? IOS_INTERSTITIAL_AD_UNIT
-            : ANDROID_INTERSTITIAL_AD_UNIT;
-        interstitial = InterstitialAd.createForAdRequest(adUnitId, {
-          requestNonPersonalizedAdsOnly: true,
-        });
-
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.LOADED, () => {
-            try {
-              interstitial.show();
-              didShow = true;
-            } catch (e) {
-              console.log("Lobby interstitial show error:", e?.message || String(e));
-            }
-          }),
-        );
-
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-            console.log("Lobby interstitial closed");
-          }),
-        );
-
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.ERROR, (e) => {
-            console.log("Lobby interstitial error:", e?.message || String(e));
-            if (!retried) {
-              retried = true;
-              setTimeout(() => {
-                try {
-                  interstitial.load();
-                } catch {}
-              }, 1200);
-            }
-          }),
-        );
-
-        interstitial.load();
-
-        setTimeout(() => {
-          if (!didShow && !retried) {
-            retried = true;
-            try {
-              interstitial.load();
-            } catch {}
-          }
-        }, 4000);
-      } catch (e) {
-        console.log("Lobby interstitial unavailable:", e?.message || String(e));
-      }
-    })();
-
-    return () => {
-      unsubscribers.forEach((unsub) => {
-        try {
-          unsub && unsub();
-        } catch {}
-      });
-    };
-  }, []);
+  useInterstitialAd({
+    iosAdUnitId: IOS_INTERSTITIAL_AD_UNIT,
+    androidAdUnitId: ANDROID_INTERSTITIAL_AD_UNIT,
+    screenName: "GameLobby",
+    autoShow: true,
+    showDelayMs: 600,
+    enabled: Boolean(gamepin),
+  });
 
   useEffect(() => {
     if (!countdownData?.startAt || !countdownData?.durationMs) {
@@ -173,7 +121,7 @@ export default function GameLobby({ route, navigation }) {
       return;
     }
 
-    const steps = ["3", "2", "1", "GO!"];
+    const steps = ["3", "2", "1", goLabel];
     const startAt = countdownData.startAt;
     const durationMs = countdownData.durationMs;
 
@@ -206,7 +154,7 @@ export default function GameLobby({ route, navigation }) {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [countdownData]);
+  }, [countdownData, goLabel]);
 
   useEffect(() => {
     if (isGameStarted && !hasNavigatedRef.current) {
@@ -364,8 +312,8 @@ export default function GameLobby({ route, navigation }) {
     }, GAME_START_COUNTDOWN_MS);
   };
 
-  const showRemoveModal = (playerUsername) => {
-    setPlayerToRemove(playerUsername);
+  const showRemoveModal = (player) => {
+    setPlayerToRemove(player);
     setModalVisible(true);
   };
 
@@ -375,20 +323,28 @@ export default function GameLobby({ route, navigation }) {
       return;
     }
 
+    const targetKey =
+      playerToRemove.usernameKey || toUserKey(playerToRemove.username);
+
+    if (!targetKey) {
+      setModalVisible(false);
+      return;
+    }
+
     try {
       const playerRef = ref(
         database,
-        `games/${gamepin}/players/${playerToRemove}`,
+        `games/${gamepin}/players/${targetKey}`,
       );
       await remove(playerRef);
 
       const traitsRef = ref(
         database,
-        `games/${gamepin}/traits/${playerToRemove}`,
+        `games/${gamepin}/traits/${targetKey}`,
       );
       await remove(traitsRef);
 
-      if (playerToRemove === username) {
+      if (targetKey === usernameKey) {
         navigation.navigate("JoinGame", { username });
       }
     } catch (error) {
@@ -421,14 +377,15 @@ export default function GameLobby({ route, navigation }) {
   const renderHeader = () => (
     <View style={localStyles.headerSection}>
       <Image
-        source={require("../assets/logoNew.png")}
+        source={logoSource}
         style={localStyles.logo}
       />
       <View style={localStyles.hero}>
-        <Text style={localStyles.heroTitle}>Game Lobby</Text>
+        <Text style={localStyles.heroTitle}>{t("Game Lobby")}</Text>
         <Text style={localStyles.heroSubtitle}>
-          Wait here until everyone is in and ready to go. Share the game code
-          with friends and keep an eye on their progress.
+          {t(
+            "Wait here until everyone is in and ready to go. Share the game code with friends and keep an eye on their progress.",
+          )}
         </Text>
       </View>
 
@@ -445,9 +402,9 @@ export default function GameLobby({ route, navigation }) {
               <Text style={localStyles.pinBadgeText}>{gamepin}</Text>
             </View>
             <View style={localStyles.summaryTag}>
-              <Ionicons name="people-outline" size={16} color="#6B5D92" />
+              <Ionicons name="people-outline" size={16} color="#c2724e" />
               <Text style={localStyles.summaryTagText}>
-                {players.length} players
+                {t("{{count}} players", { count: players.length })}
               </Text>
             </View>
           </View>
@@ -460,7 +417,7 @@ export default function GameLobby({ route, navigation }) {
                 <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
               </View>
               <View>
-                <Text style={localStyles.summaryLabel}>Ready</Text>
+                <Text style={localStyles.summaryLabel}>{t("Ready")}</Text>
                 <Text style={localStyles.summaryValue}>{readyCount}</Text>
               </View>
             </View>
@@ -472,7 +429,9 @@ export default function GameLobby({ route, navigation }) {
                 <Ionicons name="time-outline" size={22} color="#f97316" />
               </View>
               <View>
-                <Text style={localStyles.summaryLabel}>In progress</Text>
+                <Text style={localStyles.summaryLabel}>
+                  {t("In progress")}
+                </Text>
                 <Text style={localStyles.summaryValue}>
                   {Math.max(players.length - readyCount, 0)}
                 </Text>
@@ -486,8 +445,9 @@ export default function GameLobby({ route, navigation }) {
 
   const renderPlayer = ({ item }) => {
     const ready = !!item.traitsCompleted;
-    const canRemove = isHost && item.username !== username;
-    const isCurrentUser = item.username === username;
+    const playerKey = item.usernameKey || toUserKey(item.username);
+    const isCurrentUser = playerKey === usernameKey;
+    const canRemove = isHost && !isCurrentUser;
     const initial =
       item.username && item.username.length > 0
         ? item.username.charAt(0).toUpperCase()
@@ -497,10 +457,12 @@ export default function GameLobby({ route, navigation }) {
       <View style={localStyles.playerCard}>
         {canRemove && (
           <TouchableOpacity
-            onPress={() => showRemoveModal(item.username)}
+            onPress={() => showRemoveModal(item)}
             style={localStyles.removeButton}
             accessibilityRole="button"
-            accessibilityLabel={`Poista ${item.username}`}
+            accessibilityLabel={t("Remove {{name}}", {
+              name: item.username,
+            })}
           >
             <Ionicons name="remove-circle" size={20} color="#ef4444" />
           </TouchableOpacity>
@@ -538,12 +500,12 @@ export default function GameLobby({ route, navigation }) {
                 : localStyles.playerStatusTextWait,
             ]}
           >
-            {ready ? "Ready" : "In progress"}
+            {ready ? t("Ready") : t("In progress")}
           </Text>
           {!ready && (
             <ActivityIndicator
               size="small"
-              color="#906AFE"
+              color="#ff66c4"
               style={localStyles.playerSpinner}
             />
           )}
@@ -566,7 +528,7 @@ export default function GameLobby({ route, navigation }) {
               color="#4C3F6C"
               style={localStyles.editButtonIcon}
             />
-            <Text style={localStyles.editButtonText}>Edit Traits</Text>
+            <Text style={localStyles.editButtonText}>{t("Edit Traits")}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -582,14 +544,14 @@ export default function GameLobby({ route, navigation }) {
             <Ionicons
               name={countdownActive ? "timer-outline" : "information-circle"}
               size={18}
-              color="#6B5D92"
+              color="#c2724e"
             />
             <Text style={localStyles.footerHintText}>
               {countdownActive
-                ? "Countdown in progress — get ready!"
+                ? t("Countdown in progress - get ready!")
                 : allPlayersReady
-                ? "Everyone is ready! Start the game whenever you like."
-                : "Waiting for players to finish prepping before we begin."}
+                ? t("Everyone is ready! Start the game whenever you like.")
+                : t("Waiting for players to finish prepping before we begin.")}
             </Text>
           </View>
           <TouchableOpacity
@@ -604,15 +566,15 @@ export default function GameLobby({ route, navigation }) {
             <LinearGradient
               colors={
                 canStart
-                  ? ["#906AFE", "#ff66c4"]
-                  : ["rgba(144,106,254,0.45)", "rgba(255,102,196,0.45)"]
+                  ? ["#42E695", "#3BB2B8"]
+                  : ["rgba(66,230,149,0.45)", "rgba(59,178,184,0.35)"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={localStyles.startButtonGradient}
             >
               <Text style={localStyles.startButtonText}>
-                {countdownActive ? "Starting..." : "Start Game"}
+                {countdownActive ? t("Starting...") : t("Start Game")}
               </Text>
               <Ionicons name="play-circle" size={26} color="#ffffff" />
             </LinearGradient>
@@ -627,12 +589,14 @@ export default function GameLobby({ route, navigation }) {
           <Ionicons
             name={countdownActive ? "timer-outline" : "hourglass-outline"}
             size={18}
-            color="#6B5D92"
+            color="#c2724e"
           />
           <Text style={localStyles.footerHintText}>
             {countdownActive
-              ? "Countdown started! Get ready to jump in."
-              : "Waiting for the host to start the game. We'll notify you as soon as it begins."}
+              ? t("Countdown started! Get ready to jump in.")
+              : t(
+                  "Waiting for the host to start the game. We'll notify you as soon as it begins.",
+                )}
           </Text>
         </View>
       </View>
@@ -643,7 +607,7 @@ export default function GameLobby({ route, navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -673,11 +637,12 @@ export default function GameLobby({ route, navigation }) {
                   color="#F8ECFF"
                 />
                 <Text style={localStyles.emptyTitle}>
-                  Waiting for the first players
+                  {t("Waiting for the first players")}
                 </Text>
                 <Text style={localStyles.emptyText}>
-                  Share the game code with your friends. Players will appear
-                  here as soon as they join.
+                  {t(
+                    "Share the game code with your friends. Players will appear here as soon as they join.",
+                  )}
                 </Text>
               </View>
             }
@@ -690,29 +655,31 @@ export default function GameLobby({ route, navigation }) {
         <ModalAlert
           visible={modalVisible}
           variant="warn"
-          title="Remove Player"
-          message={`Are you sure you want to remove ${playerToRemove || ""} from the game?`}
+          title={t("Remove Player")}
+          message={t("Are you sure you want to remove {{name}} from the game?", {
+            name: playerToRemove?.username || t("this player"),
+          })}
           buttons={[
-            { text: "Remove", onPress: removePlayer },
-            { text: "Cancel", onPress: () => {} },
+            { text: t("Remove"), onPress: removePlayer },
+            { text: t("Cancel"), onPress: () => {} },
           ]}
           onClose={() => setModalVisible(false)}
         />
         {countdownStep && (
           <View style={localStyles.countdownOverlay}>
             <LinearGradient
-              colors={["#906AFE", "#ff66c4"]}
+              colors={["#ff66c4", "#ffde59"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={localStyles.countdownBox}
             >
               <Text style={localStyles.countdownTitle}>
-                Game starting in
+                {t("Game starting in")}
               </Text>
               <Text
                 style={[
                   localStyles.countdownValue,
-                  countdownStep === "GO!" && localStyles.countdownGoValue,
+                  countdownStep === goLabel && localStyles.countdownGoValue,
                 ]}
               >
                 {countdownStep}
@@ -828,7 +795,7 @@ const localStyles = StyleSheet.create({
   summaryTag: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(144, 106, 254, 0.12)",
+    backgroundColor: "rgba(255, 145, 77, 0.12)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -837,7 +804,7 @@ const localStyles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 13,
     fontWeight: "600",
-    color: "#6B5D92",
+    color: "#c2724e",
   },
   summaryRow: {
     flexDirection: "row",
@@ -872,7 +839,7 @@ const localStyles = StyleSheet.create({
     marginTop: 4,
     fontSize: 20,
     fontWeight: "700",
-    color: "#221641",
+    color: "#2d102a",
   },
   summaryDivider: {
     width: 1,
@@ -920,7 +887,7 @@ const localStyles = StyleSheet.create({
   playerInitial: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#221641",
+    color: "#2d102a",
   },
   playerName: {
     fontSize: 16,
@@ -1062,9 +1029,15 @@ const localStyles = StyleSheet.create({
   startButton: {
     marginTop: 18,
     borderRadius: 20,
+    shadowColor: "rgba(59, 178, 184, 0.55)",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 8,
   },
   startButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.8,
+    shadowOpacity: 0.15,
   },
   startButtonGradient: {
     borderRadius: 20,
@@ -1080,3 +1053,5 @@ const localStyles = StyleSheet.create({
     color: "#ffffff",
   },
 });
+
+

@@ -18,6 +18,9 @@ import { ref, onValue, update, set, get } from "firebase/database";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { database } from "../firebaseConfig";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toUserKey } from "../utils/userKey";
+import theme from "../utils/theme";
 
 const screenW = Dimensions.get("window").width || 360;
 const DECISION_ANIM_DURATION = 2000;
@@ -31,12 +34,14 @@ const androidBlurProps =
 
 export default function GamePlay({ route, navigation }) {
   const { gamepin, username } = route.params;
+  const { t } = useLanguage();
+  const usernameKey = useMemo(() => toUserKey(username), [username]);
 
   if (!username) {
     console.error("Username is undefined. Please check navigation params.");
     return (
       <View>
-        <Text>Error: Username is undefined.</Text>
+        <Text>{t("Error: Username is undefined.")}</Text>
       </View>
     );
   }
@@ -45,7 +50,7 @@ export default function GamePlay({ route, navigation }) {
     console.error("Gamepin is undefined. Please check navigation params.");
     return (
       <View>
-        <Text>Error: Gamepin is undefined.</Text>
+        <Text>{t("Error: Gamepin is undefined.")}</Text>
       </View>
     );
   }
@@ -212,7 +217,8 @@ export default function GamePlay({ route, navigation }) {
       }
 
       const playersData = gameData.players || {};
-      const playerRecord = playersData[username];
+      const playerRecord =
+        playersData[usernameKey] || playersData[username];
 
       if (!playerRecord || playerRecord.status === "left") {
         navigateToOptions();
@@ -220,10 +226,16 @@ export default function GamePlay({ route, navigation }) {
         return;
       }
 
-      const rawPlayers = Object.keys(playersData).map((key) => ({
-        username: key,
-        ...playersData[key],
-      }));
+      const rawPlayers = Object.entries(playersData).map(([key, value]) => {
+        const data = value || {};
+        const safeKey = data.usernameKey || key;
+        const displayName = data.username || safeKey;
+        return {
+          ...data,
+          username: displayName,
+          usernameKey: safeKey,
+        };
+      });
 
       const activePlayers = rawPlayers.filter(
         (player) => player?.status !== "left",
@@ -238,7 +250,7 @@ export default function GamePlay({ route, navigation }) {
         currentRound: gameData.currentRound || 1,
         players: activePlayers,
         playerAcceptedTraits:
-          (playersData[username] && playersData[username].acceptedTraits) || [],
+          (playerRecord && playerRecord.acceptedTraits) || [],
         traitReveal: gameData.traitReveal || null,
       }));
 
@@ -278,7 +290,7 @@ export default function GamePlay({ route, navigation }) {
             setOverlay({
               visible: true,
               bgColor: yes ? "#22c55e" : "#ef4444",
-              title: yes ? "To be continued" : "Break up",
+              title: yes ? t("To be continued") : t("Break up"),
               subtitle: "",
             });
           } else if (anim.phase === "next") {
@@ -288,9 +300,13 @@ export default function GamePlay({ route, navigation }) {
             );
             setOverlay({
               visible: true,
-              bgColor: "#906AFE",
-              title: `Next: ${anim.nextPlayerName || "-"}`,
-              subtitle: `Date ${anim.nextDateNumber || "-"}`,
+              bgColor: "#ff66c4",
+              title: t("Next: {{name}}", {
+                name: anim.nextPlayerName || "-",
+              }),
+              subtitle: t("Date {{number}}", {
+                number: anim.nextDateNumber || "-",
+              }),
             });
           }
 
@@ -327,6 +343,7 @@ export default function GamePlay({ route, navigation }) {
     overlayX,
     queueAnimationClear,
     username,
+    usernameKey,
   ]);
 
   const currentTraitId = gameState.currentTrait?.traitId ?? null;
@@ -346,6 +363,12 @@ export default function GamePlay({ route, navigation }) {
 
   const progressPercent =
     traitPoolCount > 0 ? Math.min(usedTraitCount / traitPoolCount, 1) : 0;
+  const traitsPlayedLabel = traitPoolCount
+    ? t("{{used}}/{{total}} traits played", {
+        used: usedTraitCount,
+        total: traitPoolCount,
+      })
+    : t("{{used}} traits played", { used: usedTraitCount });
 
   const currentPlayer =
     gameState.players[gameState.currentPlayerIndex] || null;
@@ -380,13 +403,31 @@ export default function GamePlay({ route, navigation }) {
 
   const decisionButtonsDisabled = decisionInProgress || !decisionReady;
   const decisionCountdownLabel =
-    decisionCountdown !== null ? ` (${decisionCountdown}s)` : "";
-  const displayName = currentPlayer?.username || "Player";
+    decisionCountdown !== null
+      ? t(" ({{seconds}}s)", { seconds: decisionCountdown })
+      : "";
+  const fallbackPlayerLabel = t("Player");
+  const displayName = currentPlayer?.username || fallbackPlayerLabel;
   const playerInitial = displayName.slice(0, 1).toUpperCase();
   const totalAccepted = acceptedTraits.length;
   const revealProgressLabel = totalAccepted
-    ? `${revealedTraits.length}/${totalAccepted} shown`
-    : "Accepted traits";
+    ? t("{{shown}}/{{total}} shown", {
+        shown: revealedTraits.length,
+        total: totalAccepted,
+      })
+    : t("Accepted traits");
+  const otherPlayerName = currentPlayer?.username || t("the player");
+  const traitMetaText = isCurrentUserTurn
+    ? revealVisible
+      ? t("Review your accepted traits")
+      : decisionCountdown !== null
+      ? t("Decision unlocks in {{seconds}}s", {
+          seconds: decisionCountdown,
+        })
+      : t("Your call!")
+    : revealVisible
+    ? t("Reviewing {{name}}'s choices", { name: otherPlayerName })
+    : t("Waiting for {{name}}", { name: otherPlayerName });
 
   const buildNextTraitUpdates = useCallback(() => {
     const traitPool = Array.isArray(gameState.traits)
@@ -557,9 +598,9 @@ export default function GamePlay({ route, navigation }) {
       }
 
       const updates = {
-        [`players/${username}/status`]: "left",
-        [`players/${username}/leftAt`]: Date.now(),
-        [`players/${username}/active`]: false,
+        [`players/${usernameKey}/status`]: "left",
+        [`players/${usernameKey}/leftAt`]: Date.now(),
+        [`players/${usernameKey}/active`]: false,
         currentPlayerIndex: nextIndex,
         currentRound: nextRound,
       };
@@ -616,8 +657,8 @@ export default function GamePlay({ route, navigation }) {
     } catch (error) {
       console.error("Failed to leave game:", error);
       Alert.alert(
-        "Leaving failed",
-        "We couldn't leave the game right now. Please try again shortly.",
+        t("Leaving failed"),
+        t("We couldn't leave the game right now. Please try again shortly."),
       );
     } finally {
       if (!navigatedAwayRef.current) {
@@ -642,7 +683,7 @@ export default function GamePlay({ route, navigation }) {
       const confirmResult =
         typeof window !== "undefined"
           ? window.confirm(
-              "Leave the game? Your traits stay in play for the others.",
+              t("Leave the game? Your traits stay in play for the others."),
             )
           : true;
       if (confirmResult) {
@@ -652,12 +693,12 @@ export default function GamePlay({ route, navigation }) {
     }
 
     Alert.alert(
-      "Leave Game",
-      "Are you sure you want to leave the game? Your traits stay in play.",
+      t("Leave Game"),
+      t("Are you sure you want to leave the game? Your traits stay in play."),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("Cancel"), style: "cancel" },
         {
-          text: "Leave",
+          text: t("Leave"),
           style: "destructive",
           onPress: leaveGame,
         },
@@ -870,9 +911,12 @@ export default function GamePlay({ route, navigation }) {
       return;
     }
 
+    const targetKey =
+      currentTurnPlayer.usernameKey ||
+      toUserKey(currentTurnPlayer.username);
     const playerRef = ref(
       database,
-      `games/${gamepin}/players/${currentTurnPlayer.username}`,
+      `games/${gamepin}/players/${targetKey}`,
     );
 
     const baseAccepted = Array.isArray(currentTurnPlayer.acceptedTraits)
@@ -958,12 +1002,23 @@ export default function GamePlay({ route, navigation }) {
   };
 
   const traitText =
-    gameState.currentTrait?.text ?? "Waiting for the next trait...";
+    gameState.currentTrait?.text ?? t("Waiting for the next trait...");
+  const overlayIsStatus =
+    overlay.bgColor === "#22c55e" || overlay.bgColor === "#ef4444";
+  const overlayGradient =
+    overlay.bgColor === "#22c55e"
+      ? ["rgba(34,197,94,0.96)", "rgba(21,128,61,0.92)"]
+      : overlay.bgColor === "#ef4444"
+      ? ["rgba(239,68,68,0.96)", "rgba(185,28,28,0.92)"]
+      : theme.backgroundGradient;
+  const overlayIconColor = "#ffffff";
+  const overlayTitleColor = "#ffffff";
+  const overlaySubtitleColor = "rgba(255,255,255,0.9)";
 
   return (
     <View style={gp.container}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={StyleSheet.absoluteFillObject}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -992,7 +1047,7 @@ export default function GamePlay({ route, navigation }) {
                     style={gp.roundBadgeIcon}
                   />
                   <Text style={gp.roundBadgeText}>
-                    Round {gameState.currentRound}
+                    {t("Round {{number}}", { number: gameState.currentRound })}
                   </Text>
                 </View>
                 <View style={gp.turnChip}>
@@ -1023,14 +1078,16 @@ export default function GamePlay({ route, navigation }) {
                   style={gp.leaveButtonIcon}
                 />
                 <Text style={gp.leaveButtonText}>
-                  {leaveInProgress ? "Leaving..." : "Leave"}
+                  {leaveInProgress ? t("Leaving...") : t("Leave")}
                 </Text>
               </TouchableOpacity>
             </View>
             <Text style={gp.headerSubtitle}>
               {isCurrentUserTurn
-                ? "Does this trait describe you?"
-                : `Waiting for ${currentPlayer?.username || "-"} to decide`}
+                ? t("Does this trait describe you?")
+                : t("Waiting for {{name}} to decide", {
+                    name: currentPlayer?.username || "-",
+                  })}
             </Text>
             <View style={gp.progressWrapper}>
               <View style={gp.progressTrack}>
@@ -1046,11 +1103,7 @@ export default function GamePlay({ route, navigation }) {
                   ]}
                 />
               </View>
-              <Text style={gp.progressLabel}>
-                {traitPoolCount
-                  ? `${usedTraitCount}/${traitPoolCount} traits played`
-                  : `${usedTraitCount} traits played`}
-              </Text>
+              <Text style={gp.progressLabel}>{traitsPlayedLabel}</Text>
             </View>
           </View>
 
@@ -1071,10 +1124,10 @@ export default function GamePlay({ route, navigation }) {
                 <Ionicons
                   name="heart"
                   size={18}
-                  color="#906AFE"
+                  color="#ff66c4"
                   style={gp.traitLabelIcon}
                 />
-                <Text style={gp.traitLabel}>Date partner traits</Text>
+                <Text style={gp.traitLabel}>{t("Date partner traits")}</Text>
               </View>
               <Text style={gp.traitText}>{traitText}</Text>
               <View style={gp.traitMetaRow}>
@@ -1083,20 +1136,10 @@ export default function GamePlay({ route, navigation }) {
                     isCurrentUserTurn ? "heart-circle-outline" : "people-outline"
                   }
                   size={18}
-                  color="#6B5D92"
+                  color="#c2724e"
                   style={gp.traitMetaIcon}
                 />
-                <Text style={gp.traitMetaText}>
-                  {isCurrentUserTurn
-                    ? revealVisible
-                      ? "Review your accepted traits"
-                      : decisionCountdown !== null
-                      ? `Decision unlocks in ${decisionCountdown}s`
-                      : "Your call!"
-                    : revealVisible
-                    ? `Reviewing ${currentPlayer?.username || "the player"}'s choices`
-                    : `Waiting for ${currentPlayer?.username || "the player"}`}
-                </Text>
+                <Text style={gp.traitMetaText}>{traitMetaText}</Text>
               </View>
             </LinearGradient>
           </Animated.View>
@@ -1125,7 +1168,7 @@ export default function GamePlay({ route, navigation }) {
                     style={gp.actionIcon}
                   />
                   <Text style={gp.actionText}>
-                    Keep{decisionCountdownLabel}
+                    {`${t("Keep")}${decisionCountdownLabel}`}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -1151,7 +1194,7 @@ export default function GamePlay({ route, navigation }) {
                     style={gp.actionIcon}
                   />
                   <Text style={gp.actionText}>
-                    Skip{decisionCountdownLabel}
+                    {`${t("Skip")}${decisionCountdownLabel}`}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -1165,13 +1208,15 @@ export default function GamePlay({ route, navigation }) {
                 style={gp.waitingIcon}
               />
               <Text style={gp.waitingText}>
-                Waiting for {currentPlayer?.username || "the player"} to decide…
+                {t("Waiting for {{name}} to decide...", {
+                  name: otherPlayerName,
+                })}
               </Text>
             </View>
           )}
 
           <LinearGradient
-            colors={["rgba(255,255,255,0.14)", "rgba(255,255,255,0.05)"]}
+            colors={theme.cardFrameGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={gp.acceptedCard}
@@ -1182,10 +1227,10 @@ export default function GamePlay({ route, navigation }) {
                   <Ionicons
                     name="ribbon-outline"
                     size={18}
-                    color="#F8ECFF"
+                    color={theme.accentPrimary}
                     style={gp.acceptedIcon}
                   />
-                  <Text style={gp.acceptedTitle}>Accepted Traits</Text>
+                  <Text style={gp.acceptedTitle}>{t("Accepted Traits")}</Text>
                 </View>
                 <View style={gp.acceptedCounter}>
                   <Text style={gp.acceptedCounterText}>
@@ -1214,7 +1259,7 @@ export default function GamePlay({ route, navigation }) {
                     style={gp.emptyIcon}
                   />
                   <Text style={gp.emptyText}>
-                    No accepted traits yet. Make bold choices!
+                    {t("No accepted traits yet. Make bold choices!")}
                   </Text>
                 </View>
               )}
@@ -1232,7 +1277,7 @@ export default function GamePlay({ route, navigation }) {
               pointerEvents="none"
             />
             <LinearGradient
-              colors={["rgba(81,112,255,0.97)", "rgba(255,102,196,0.95)"]}
+              colors={theme.cardFrameGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={gp.revealCard}
@@ -1251,7 +1296,7 @@ export default function GamePlay({ route, navigation }) {
                   <Ionicons
                     name="ribbon-outline"
                     size={16}
-                    color="#F8ECFF"
+                    color={theme.accentPrimary}
                     style={gp.revealBadgeIcon}
                   />
                   <Text style={gp.revealBadgeText}>{totalAccepted}</Text>
@@ -1269,10 +1314,12 @@ export default function GamePlay({ route, navigation }) {
                   <Ionicons
                     name="heart"
                     size={16}
-                    color="#FF6BD8"
+                    color={theme.accentPrimary}
                     style={gp.revealTagIcon}
                   />
-                  <Text style={gp.revealTagText}>Date partner traits</Text>
+                  <Text style={gp.revealTagText}>
+                    {t("Date partner traits")}
+                  </Text>
                 </View>
                 {revealedTraits.map((trait, index) => (
                   <View key={trait.traitId || index} style={gp.revealItem}>
@@ -1296,19 +1343,21 @@ export default function GamePlay({ route, navigation }) {
                 disabled={!isCurrentUserTurn}
               >
                 <LinearGradient
-                  colors={["rgba(255,255,255,0.98)", "rgba(255,214,255,0.88)"]}
+                  colors={theme.primaryButtonGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={gp.revealButtonGradient}
                 >
                   <View style={gp.revealButtonContent}>
                     <Text style={gp.revealButtonText}>
-                      {revealNextCount > 0 ? "Next trait" : "Show new trait"}
+                      {revealNextCount > 0
+                        ? t("Next trait")
+                        : t("Show new trait")}
                     </Text>
                     <Ionicons
                       name="arrow-forward-outline"
                       size={18}
-                      color="#362168"
+                      color="#ffffff"
                       style={gp.revealButtonIcon}
                     />
                   </View>
@@ -1316,7 +1365,7 @@ export default function GamePlay({ route, navigation }) {
               </TouchableOpacity>
               {!isCurrentUserTurn && (
                 <Text style={gp.revealWaitingText}>
-                  Waiting for {displayName} to continue
+                  {t("Waiting for {{name}} to continue", { name: displayName })}
                 </Text>
               )}
             </LinearGradient>
@@ -1340,13 +1389,7 @@ export default function GamePlay({ route, navigation }) {
               pointerEvents="none"
             />
             <LinearGradient
-              colors={
-                overlay.bgColor === "#22c55e"
-                  ? ["rgba(34,197,94,0.96)", "rgba(21,128,61,0.92)"]
-                  : overlay.bgColor === "#ef4444"
-                  ? ["rgba(239,68,68,0.96)", "rgba(185,28,28,0.92)"]
-                  : ["rgba(144,106,254,0.96)", "rgba(255,102,196,0.92)"]
-              }
+              colors={overlayGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={gp.overlayCard}
@@ -1360,12 +1403,26 @@ export default function GamePlay({ route, navigation }) {
                     : "sparkles-outline"
                 }
                 size={32}
-                color="#ffffff"
+                color={overlayIconColor}
                 style={gp.overlayIcon}
               />
-              <Text style={gp.overlayTitle}>{overlay.title}</Text>
+              <Text
+                style={[
+                  gp.overlayTitle,
+                  !overlayIsStatus && { color: overlayTitleColor },
+                ]}
+              >
+                {overlay.title}
+              </Text>
               {!!overlay.subtitle && (
-                <Text style={gp.overlaySubtitle}>{overlay.subtitle}</Text>
+                <Text
+                  style={[
+                    gp.overlaySubtitle,
+                    !overlayIsStatus && { color: overlaySubtitleColor },
+                  ]}
+                >
+                  {overlay.subtitle}
+                </Text>
               )}
             </LinearGradient>
           </Animated.View>
@@ -1530,7 +1587,7 @@ const gp = StyleSheet.create({
     marginRight: 6,
   },
   traitLabel: {
-    color: "#6B5D92",
+    color: "#c2724e",
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.8,
@@ -1554,7 +1611,7 @@ const gp = StyleSheet.create({
     marginRight: 8,
   },
   traitMetaText: {
-    color: "#6B5D92",
+    color: "#c2724e",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -1611,12 +1668,19 @@ const gp = StyleSheet.create({
     borderRadius: 26,
     padding: 1.5,
     marginTop: 32,
+    shadowColor: theme.neutralShadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    elevation: 10,
   },
   acceptedInner: {
     borderRadius: 24,
     paddingVertical: 22,
     paddingHorizontal: 20,
-    backgroundColor: "rgba(17,16,32,0.55)",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.6)",
   },
   acceptedHeader: {
     flexDirection: "row",
@@ -1632,7 +1696,7 @@ const gp = StyleSheet.create({
     marginRight: 8,
   },
   acceptedTitle: {
-    color: "#F8ECFF",
+    color: theme.bodyText,
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.4,
@@ -1642,12 +1706,12 @@ const gp = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,222,89,0.22)",
     alignItems: "center",
     justifyContent: "center",
   },
   acceptedCounterText: {
-    color: "#F8ECFF",
+    color: theme.metaLabel,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -1660,19 +1724,19 @@ const gp = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,102,196,0.18)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
   },
   acceptedIndexText: {
-    color: "#F8ECFF",
+    color: theme.accentPrimary,
     fontSize: 13,
     fontWeight: "700",
   },
   acceptedItemText: {
     flex: 1,
-    color: "rgba(255,255,255,0.92)",
+    color: theme.bodyMuted,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: "600",
@@ -1686,7 +1750,7 @@ const gp = StyleSheet.create({
     marginBottom: 6,
   },
   emptyText: {
-    color: "rgba(255,255,255,0.72)",
+    color: theme.helperText,
     fontSize: 13,
     lineHeight: 18,
     textAlign: "center",
@@ -1700,16 +1764,17 @@ const gp = StyleSheet.create({
   },
   revealBlur: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 251, 244, 0.65)",
   },
   revealCard: {
     width: "100%",
     borderRadius: 28,
     paddingVertical: 30,
     paddingHorizontal: 24,
-    backgroundColor: "rgba(12,11,30,0.52)",
-    borderWidth: 1.5,
-    borderColor: "rgba(245,240,255,0.22)",
-    shadowColor: "rgba(18,17,45,0.65)",
+    backgroundColor: theme.neutralSurface,
+    borderWidth: 1,
+    borderColor: "rgba(255, 222, 207, 0.6)",
+    shadowColor: theme.neutralShadow,
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.45,
     shadowRadius: 28,
@@ -1727,9 +1792,9 @@ const gp = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "rgba(12,11,30,0.55)",
+    backgroundColor: theme.accentMuted,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    borderColor: theme.accentMutedBorder,
     marginBottom: 16,
     marginTop: 4,
   },
@@ -1737,7 +1802,7 @@ const gp = StyleSheet.create({
     marginRight: 6,
   },
   revealTagText: {
-    color: "#FDF6FF",
+    color: theme.metaLabel,
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.4,
@@ -1746,13 +1811,13 @@ const gp = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255, 102, 196, 0.12)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
   },
   revealAvatarText: {
-    color: "#E9F5FF",
+    color: theme.bodyText,
     fontSize: 22,
     fontWeight: "800",
   },
@@ -1760,14 +1825,14 @@ const gp = StyleSheet.create({
     flex: 1,
   },
   revealPlayerName: {
-    color: "#FFFFFF",
+    color: theme.bodyText,
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.2,
   },
   revealPlayerSubtitle: {
     marginTop: 2,
-    color: "rgba(235,234,255,0.78)",
+    color: theme.helperText,
     fontSize: 12,
     letterSpacing: 0.3,
   },
@@ -1777,21 +1842,21 @@ const gp = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: theme.badgeBackground,
     marginLeft: 12,
   },
   revealBadgeIcon: {
     marginRight: 4,
   },
   revealBadgeText: {
-    color: "#F8ECFF",
+    color: theme.badgeText,
     fontSize: 14,
     fontWeight: "700",
   },
   revealDivider: {
     marginVertical: 18,
     height: 1,
-    backgroundColor: "rgba(248,236,255,0.32)",
+    backgroundColor: "rgba(255, 222, 207, 0.4)",
   },
   revealList: {
     maxHeight: 240,
@@ -1808,19 +1873,19 @@ const gp = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(244,225,255,0.26)",
+    backgroundColor: theme.accentMuted,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
   },
   revealIndexText: {
-    color: "#F8ECFF",
+    color: theme.accentPrimary,
     fontSize: 14,
     fontWeight: "700",
   },
   revealItemText: {
     flex: 1,
-    color: "rgba(255,252,255,0.95)",
+    color: theme.bodyMuted,
     fontSize: 18,
     fontWeight: "600",
   },
@@ -1840,7 +1905,7 @@ const gp = StyleSheet.create({
     justifyContent: "center",
   },
   revealButtonText: {
-    color: "#1f1459",
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
@@ -1854,7 +1919,7 @@ const gp = StyleSheet.create({
   },
   revealWaitingText: {
     marginTop: 12,
-    color: "rgba(248,236,255,0.82)",
+    color: theme.helperText,
     fontSize: 13,
     textAlign: "center",
   },
@@ -1870,7 +1935,7 @@ const gp = StyleSheet.create({
   },
   overlayBlur: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(10,9,22,0.55)",
+    backgroundColor: "rgba(255, 245, 238, 0.5)",
   },
   overlayCard: {
     width: "86%",
@@ -1880,7 +1945,7 @@ const gp = StyleSheet.create({
     paddingVertical: 32,
     paddingHorizontal: 24,
     alignItems: "center",
-    shadowColor: "#120F2C",
+    shadowColor: theme.neutralShadow,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.32,
     shadowRadius: 24,
@@ -1902,3 +1967,8 @@ const gp = StyleSheet.create({
     textAlign: "center",
   },
 });
+
+
+
+
+

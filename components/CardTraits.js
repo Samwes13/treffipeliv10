@@ -18,9 +18,11 @@ import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
 import ModalAlert from "./ModalAlert";
 import { Ionicons } from "@expo/vector-icons";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toUserKey } from "../utils/userKey";
 
 const TRAIT_COUNT = 6;
-const SAMPLE_TRAIT_PRESETS = [
+const SAMPLE_TRAIT_PRESETS_EN = [
   [
     "Curates epic weekend plans",
     "Remembers tiny details",
@@ -46,11 +48,38 @@ const SAMPLE_TRAIT_PRESETS = [
     "Cancels last minute",
   ],
 ];
+const SAMPLE_TRAIT_PRESETS_FI = [
+  [
+    "Keksii eeppiset viikonloppusuunnitelmat",
+    "Muistaa pienimmätkin yksityiskohdat",
+    "Lähtee hetken mielijohteesta roadtripille",
+    "Jättää mukit lojumaan kaikkialle",
+    "Torkuttaa herätyksen aina uudestaan",
+    "Ahtaa kalenterin täyteen iltamenoja",
+  ],
+  [
+    "Lautapelitaktiikko",
+    "Löytää uudet kahvilat",
+    "Aina valmis karaokelle",
+    "Väistelee hankalia puheita",
+    "Inhoaa ennakkosuunnittelua",
+    "Unohtaa syntymäpäivät",
+  ],
+  [
+    "Hyvällä tuulella aamusta alkaen",
+    "Tulee eläinten kanssa toimeen",
+    "Järjestää kaveriporukan tapaamisia",
+    "Selaillee somea tuntikausia",
+    "Hiljenee kesken viestin",
+    "Peruu viime hetkellä",
+  ],
+];
 
 export default function CardTraits({ route, navigation }) {
   const routeUsername = route.params?.username ?? "";
   const gamepin = route.params?.gamepin ?? "";
   const username = routeUsername.trim() || routeUsername;
+  const { t, language } = useLanguage();
 
   const [traits, setTraits] = useState(Array(TRAIT_COUNT).fill(""));
   const scrollRef = useRef(null);
@@ -62,12 +91,10 @@ export default function CardTraits({ route, navigation }) {
     message: "",
     variant: "info",
   });
+  const presetPool =
+    language === "fi" ? SAMPLE_TRAIT_PRESETS_FI : SAMPLE_TRAIT_PRESETS_EN;
 
-  const keySafeUsername = useMemo(
-    () =>
-      (username || "player").replace(/[.#$/\[\]]/g, "_") || "player",
-    [username],
-  );
+  const keySafeUsername = useMemo(() => toUserKey(username), [username]);
 
   const trimmedTraits = useMemo(
     () => traits.map((trait) => trait.trim()),
@@ -100,6 +127,15 @@ export default function CardTraits({ route, navigation }) {
   const progress = completedCount / TRAIT_COUNT;
   const hasAllTraits = completedCount === TRAIT_COUNT;
   const hasDuplicates = duplicateEntries.size > 0;
+  const duplicateErrorText = t("This trait is already on the list.");
+  const missingFieldText = t("Please complete this field.");
+  const completedLabel = t("Complete: {{current}}/{{total}}", {
+    current: completedCount,
+    total: TRAIT_COUNT,
+  });
+  const duplicateHint = t("Remove duplicate traits before continuing.");
+  const finishedHint = t("All fields completed!");
+  const remainingHint = t("Fill in the remaining fields.");
 
   const handleInputChange = (text, index) => {
     setTraits((current) => {
@@ -111,9 +147,8 @@ export default function CardTraits({ route, navigation }) {
 
   const handleAutoFill = () => {
     const preset =
-      SAMPLE_TRAIT_PRESETS[
-        Math.floor(Math.random() * SAMPLE_TRAIT_PRESETS.length)
-      ] || SAMPLE_TRAIT_PRESETS[0];
+      presetPool[Math.floor(Math.random() * presetPool.length)] ||
+      presetPool[0];
     setTraits(preset.slice(0, TRAIT_COUNT));
     setTouchedInputs({});
   };
@@ -247,9 +282,10 @@ export default function CardTraits({ route, navigation }) {
   const saveTraits = async () => {
     if (!username) {
       showAlert({
-        title: "Nimimerkki puuttuu",
-        message:
+        title: t("Username Missing"),
+        message: t(
           "Use the back button to choose a username before saving your traits.",
+        ),
         variant: "error",
       });
       navigation.navigate("EnterUsername");
@@ -258,8 +294,8 @@ export default function CardTraits({ route, navigation }) {
 
     if (!gamepin) {
       showAlert({
-        title: "Peli puuttuu",
-        message: "Game code not found. Go back to the previous screen and try again.",
+        title: t("Game Code Missing"),
+        message: t("Game code not found. Go back to the previous screen and try again."),
         variant: "error",
       });
       navigation.goBack();
@@ -271,16 +307,16 @@ export default function CardTraits({ route, navigation }) {
 
       if (!hasAllTraits) {
         showAlert({
-          title: "Traits Missing",
-          message: "Fill in all six fields before continuing.",
+          title: t("Traits Missing"),
+          message: t("Fill in all six fields before continuing."),
           variant: "error",
         });
         return;
       }
 
       showAlert({
-        title: "Duplicate Traits",
-        message: "Each trait must appear only once.",
+        title: t("Duplicate Traits"),
+        message: t("Each trait must appear only once."),
         variant: "error",
       });
       return;
@@ -292,8 +328,8 @@ export default function CardTraits({ route, navigation }) {
 
       if (!gameSnapshot.exists()) {
         showAlert({
-        title: "Game Not Found",
-        message: "Check the game code and try again.",
+          title: t("Game Not Found"),
+          message: t("Check the game code and try again."),
           variant: "error",
         });
         return;
@@ -321,6 +357,8 @@ export default function CardTraits({ route, navigation }) {
       await update(
         ref(database, `games/${gamepin}/players/${keySafeUsername}`),
         {
+          username,
+          usernameKey: keySafeUsername,
           traitsCompleted: true,
         },
       );
@@ -329,8 +367,8 @@ export default function CardTraits({ route, navigation }) {
     } catch (error) {
       console.error("Error saving traits:", error);
       showAlert({
-        title: "Saving Failed",
-        message: "Something went wrong. Please try again shortly.",
+        title: t("Saving Failed"),
+        message: t("Something went wrong. Please try again shortly."),
         variant: "error",
       });
     }
@@ -339,7 +377,7 @@ export default function CardTraits({ route, navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -368,7 +406,7 @@ export default function CardTraits({ route, navigation }) {
               <View style={localStyles.pinBadge}>
                 <Ionicons name="pricetag-outline" size={22} color="#FFE5FF" />
                 <Text style={localStyles.pinBadgeText}>
-                  Game Code {gamepin || "unknown"}
+                  {t("Game Code {{code}}", { code: gamepin || t("unknown") })}
                 </Text>
               </View>
 
@@ -380,9 +418,13 @@ export default function CardTraits({ route, navigation }) {
               >
                 <View style={localStyles.card}>
                   <View style={localStyles.cardHeader}>
-                    <Text style={localStyles.cardTitle}>Trait Checklist</Text>
+                    <Text style={localStyles.cardTitle}>
+                      {t("Trait Checklist")}
+                    </Text>
                     <Text style={localStyles.cardCopy}>
-                      List personality traits, habits, or small details that stand out from the crowd.
+                      {t(
+                        "List personality traits, habits, or small details that stand out from the crowd.",
+                      )}
                     </Text>
                     <View style={localStyles.quickActions}>
                       <TouchableOpacity
@@ -391,7 +433,7 @@ export default function CardTraits({ route, navigation }) {
                         style={localStyles.quickButton}
                       >
                         <LinearGradient
-                          colors={["#906AFE", "#ff66c4"]}
+                          colors={["#ff66c4", "#ffde59"]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                           style={localStyles.quickButtonGradient}
@@ -403,7 +445,7 @@ export default function CardTraits({ route, navigation }) {
                             style={localStyles.quickButtonIcon}
                           />
                           <Text style={localStyles.quickButtonText}>
-                            Auto-fill Traits
+                            {t("Auto-fill Traits")}
                           </Text>
                         </LinearGradient>
                       </TouchableOpacity>
@@ -419,10 +461,12 @@ export default function CardTraits({ route, navigation }) {
                           color="#16a34a"
                           style={localStyles.groupIcon}
                         />
-                        <Text style={localStyles.groupTitlePositive}>Turn On</Text>
+                        <Text style={localStyles.groupTitlePositive}>
+                          {t("Turn On")}
+                        </Text>
                       </View>
                       <Text style={localStyles.groupSubtitlePositive}>
-                        These three traits capture what excites or attracts you.
+                        {t("These three traits capture what excites or attracts you.")}
                       </Text>
                       {[0, 1, 2].map((index) => {
                         const state = getFieldState(index);
@@ -431,9 +475,9 @@ export default function CardTraits({ route, navigation }) {
                           (state === "missing" && touchedInputs[index]);
                         const errorMessage =
                           state === "duplicate"
-                            ? "This trait is already on the list."
+                            ? duplicateErrorText
                             : state === "missing"
-                            ? "Please complete this field."
+                            ? missingFieldText
                             : null;
                         const accentColor = "#16a34a";
                         const trait = traits[index];
@@ -457,12 +501,14 @@ export default function CardTraits({ route, navigation }) {
                               />
                               <TextInput
                                 style={localStyles.input}
-                                placeholder={`Trait ${index + 1}`}
+                                placeholder={t("Trait {{number}}", {
+                                  number: index + 1,
+                                })}
                                 value={trait}
                                 onChangeText={(text) =>
                                   handleInputChange(text, index)
                                 }
-                                placeholderTextColor="rgba(32, 26, 64, 0.35)"
+                                placeholderTextColor="rgba(45, 16, 42, 0.4)"
                                 returnKeyType="next"
                                 onFocus={() => ensureScrollToField(index)}
                                 onBlur={() =>
@@ -491,10 +537,12 @@ export default function CardTraits({ route, navigation }) {
                           color="#dc2626"
                           style={localStyles.groupIcon}
                         />
-                        <Text style={localStyles.groupTitleNegative}>Turn Off</Text>
+                        <Text style={localStyles.groupTitleNegative}>
+                          {t("Turn Off")}
+                        </Text>
                       </View>
                       <Text style={localStyles.groupSubtitleNegative}>
-                        List traits that do not suit you or that you want to avoid.
+                        {t("List traits that do not suit you or that you want to avoid.")}
                       </Text>
                       {[3, 4, 5].map((index) => {
                         const state = getFieldState(index);
@@ -503,9 +551,9 @@ export default function CardTraits({ route, navigation }) {
                           (state === "missing" && touchedInputs[index]);
                         const errorMessage =
                           state === "duplicate"
-                            ? "This trait is already on the list."
+                            ? duplicateErrorText
                             : state === "missing"
-                            ? "Please complete this field."
+                            ? missingFieldText
                             : null;
                         const accentColor = "#dc2626";
                         const trait = traits[index];
@@ -529,12 +577,14 @@ export default function CardTraits({ route, navigation }) {
                               />
                               <TextInput
                                 style={localStyles.input}
-                                placeholder={`Trait ${index + 1}`}
+                                placeholder={t("Trait {{number}}", {
+                                  number: index + 1,
+                                })}
                                 value={trait}
                                 onChangeText={(text) =>
                                   handleInputChange(text, index)
                                 }
-                                placeholderTextColor="rgba(32, 26, 64, 0.35)"
+                                placeholderTextColor="rgba(45, 16, 42, 0.4)"
                                 returnKeyType={
                                   index === TRAIT_COUNT - 1 ? "done" : "next"
                                 }
@@ -560,19 +610,19 @@ export default function CardTraits({ route, navigation }) {
                   <View style={localStyles.progressSection}>
                     <View style={localStyles.progressHeader}>
                       <Text style={localStyles.progressLabel}>
-                        Complete: {completedCount}/{TRAIT_COUNT}
+                        {completedLabel}
                       </Text>
                       <Text style={localStyles.progressHint}>
                         {hasDuplicates
-                          ? "Remove duplicate traits before continuing."
+                          ? duplicateHint
                           : hasAllTraits
-                          ? "All fields completed!"
-                          : "Fill in the remaining fields."}
+                          ? finishedHint
+                          : remainingHint}
                       </Text>
                     </View>
                     <View style={localStyles.progressTrack}>
                       <LinearGradient
-                        colors={["#906AFE", "#ff66c4"]}
+                        colors={["#ff66c4", "#ffde59"]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={[
@@ -589,13 +639,13 @@ export default function CardTraits({ route, navigation }) {
                     style={localStyles.primaryButton}
                   >
                     <LinearGradient
-                      colors={["#906AFE", "#ff66c4"]}
+                      colors={["#ff66c4", "#ffde59"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={localStyles.primaryButtonGradient}
                     >
                       <Text style={localStyles.primaryButtonText}>
-                        Continue to Lobby
+                        {t("Continue to Lobby")}
                       </Text>
                       <Ionicons
                         name="arrow-forward-circle"
@@ -609,12 +659,13 @@ export default function CardTraits({ route, navigation }) {
                     <Ionicons
                       name="bulb-outline"
                       size={18}
-                      color="#906AFE"
+                      color="#ff66c4"
                       style={{ marginRight: 8 }}
                     />
                     <Text style={localStyles.helperBoxText}>
-                      Use short words or phrases such as "adventurous",
-                      "coffee addict", or "game night hero".
+                      {t(
+                        'Use short words or phrases such as "adventurous", "coffee addict", or "game night hero".',
+                      )}
                     </Text>
                   </View>
                 </View>
@@ -733,13 +784,13 @@ const localStyles = StyleSheet.create({
   cardTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#221641",
+    color: "#2d102a",
   },
   cardCopy: {
     marginTop: 8,
     fontSize: 15,
     lineHeight: 22,
-    color: "#554876",
+    color: "#6b3a45",
   },
   groupSection: {
     width: "100%",
@@ -802,7 +853,7 @@ const localStyles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(144, 106, 254, 0.28)",
+    borderColor: "rgba(255, 145, 77, 0.32)",
     backgroundColor: "#ffffff",
     paddingHorizontal: 18,
   },
@@ -825,7 +876,7 @@ const localStyles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     fontWeight: "600",
-    color: "#221641",
+    color: "#2d102a",
     paddingVertical: 16,
   },
   inputHelper: {
@@ -855,7 +906,7 @@ const localStyles = StyleSheet.create({
   progressTrack: {
     height: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(144, 106, 254, 0.18)",
+    backgroundColor: "rgba(255, 145, 77, 0.18)",
     overflow: "hidden",
   },
   progressFill: {
@@ -925,3 +976,5 @@ const localStyles = StyleSheet.create({
     color: "#5C4F84",
   },
 });
+
+

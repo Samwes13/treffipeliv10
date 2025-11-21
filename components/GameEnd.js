@@ -13,10 +13,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ref, update, remove, get, runTransaction } from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
-import { canUseMobileAds, loadGoogleMobileAds } from "../utils/googleMobileAds";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toUserKey } from "../utils/userKey";
+import getLogoSource from "../utils/logo";
+import useInterstitialAd from "../hooks/useInterstitialAd";
 //import AdSenseBanner from './AdSenseBanner'; // Tuo AdSense-komponentti
 
 let WebBannerAd = null;
@@ -33,6 +36,8 @@ if (Platform.OS === "web") {
 export default function GameEnd({ route, navigation }) {
   const { gamepin, username } = route.params || {};
   const [players, setPlayers] = useState([]);
+  const { t, language } = useLanguage();
+  const logoSource = getLogoSource(language);
 
   const longestLeaders = useMemo(() => {
     const sorted = [...players].sort(
@@ -65,25 +70,40 @@ export default function GameEnd({ route, navigation }) {
     () => [
       {
         key: "players",
-        label: "Players",
+        label: t("Players"),
         value: String(players.length),
         icon: "people-outline",
       },
       {
         key: "winning",
-        label: "Winning date",
-        value: champion ? `Date ${champion.treffit}` : "\u2014",
+        label: t("Winning date"),
+        value: champion
+          ? t("Date {{number}}", { number: champion.treffit })
+          : "\u2014",
         icon: "trophy-outline",
       },
       {
         key: "matches",
-        label: "Total matches",
+        label: t("Total matches"),
         value: String(totalMatchedTraits),
         icon: "sparkles-outline",
       },
     ],
-    [players.length, champion?.treffit, totalMatchedTraits],
+    [players.length, champion?.treffit, totalMatchedTraits, t],
   );
+  const heroTitle = champion
+    ? t("{{name}} claimed the crown", { name: champion.username })
+    : t("Thanks for playing Treffipeli");
+  const heroSubtitle = champion
+    ? t("Winning date: {{number}}. Ready for another round?", {
+        number: champion.treffit,
+      })
+    : t(
+        "Create a new game or head back to the lobby - the next round awaits!",
+      );
+  const heroMetaText = champion
+    ? t("{{count}} accepted traits", { count: champion.accepted || 0 })
+    : "";
 
   if (!gamepin || !username) {
     console.error("GameEnd: Missing gamepin or username!");
@@ -130,81 +150,14 @@ export default function GameEnd({ route, navigation }) {
     return () => clearTimeout(deleteGameTimeout);
   }, [gamepin]);
 
-  // Show an interstitial ad once when arriving on the Game End screen
-  useEffect(() => {
-    let interstitial;
-    let unsubscribers = [];
-    let didShow = false;
-    let retried = false;
-    (async () => {
-      if (!canUseMobileAds) {
-        console.log("Interstitial skipped: running in Expo Go or Web");
-        return;
-      }
-      try {
-        const { InterstitialAd, TestIds, AdEventType } =
-          await loadGoogleMobileAds();
-        const adUnitId = __DEV__
-          ? TestIds.INTERSTITIAL
-          : Platform.OS === "ios"
-            ? IOS_INTERSTITIAL_AD_UNIT
-            : ANDROID_INTERSTITIAL_AD_UNIT; // GameEnd interstitial (production)
-        interstitial = InterstitialAd.createForAdRequest(adUnitId, {
-          requestNonPersonalizedAdsOnly: true,
-        });
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.LOADED, () => {
-            console.log("Interstitial loaded");
-            try {
-              interstitial.show();
-              didShow = true;
-            } catch (e) {
-              console.log("Interstitial show error:", e?.message || String(e));
-            }
-          }),
-        );
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.CLOSED, () => {
-            console.log("Interstitial closed");
-          }),
-        );
-        unsubscribers.push(
-          interstitial.addAdEventListener(AdEventType.ERROR, (e) => {
-            console.log("Interstitial error:", e?.message || String(e));
-            if (!retried) {
-              retried = true;
-              setTimeout(() => {
-                try {
-                  interstitial.load();
-                } catch {}
-              }, 1200);
-            }
-          }),
-        );
-        interstitial.load();
-        // If loading takes too long, attempt one timed retry
-        setTimeout(() => {
-          if (!didShow && !retried) {
-            retried = true;
-            try {
-              interstitial.load();
-            } catch {}
-          }
-        }, 4000);
-      } catch (e) {
-        // SDK not available or not linked
-        console.log("Interstitial unavailable:", e?.message || String(e));
-      }
-    })();
-
-    return () => {
-      unsubscribers.forEach((unsub) => {
-        try {
-          unsub && unsub();
-        } catch {}
-      });
-    };
-  }, []);
+  useInterstitialAd({
+    iosAdUnitId: IOS_INTERSTITIAL_AD_UNIT,
+    androidAdUnitId: ANDROID_INTERSTITIAL_AD_UNIT,
+    screenName: "GameEnd",
+    autoShow: true,
+    showDelayMs: 800,
+    enabled: Boolean(gamepin && username),
+  });
 
   // Load leaderboard once
   useEffect(() => {
@@ -271,7 +224,7 @@ export default function GameEnd({ route, navigation }) {
         hostUser === username;
 
       if (created) {
-        const hostKeySafe = hostUser.replace(/[.#$/\[\]]/g, "_");
+        const hostKeySafe = toUserKey(hostUser);
         await update(ref(database, `games/${targetPin}`), {
           host: hostUser,
           gamepin: targetPin,
@@ -281,18 +234,20 @@ export default function GameEnd({ route, navigation }) {
           ref(database, `games/${targetPin}/players/${hostKeySafe}`),
           {
             username: hostUser,
+            usernameKey: hostKeySafe,
             traits: [],
             isHost: true,
           },
         );
       }
 
-      const keySafeUsername = username.replace(/[.#$/\[\]]/g, "_");
+      const keySafeUsername = toUserKey(username);
       const isHost = hostUser === username;
       await update(
         ref(database, `games/${targetPin}/players/${keySafeUsername}`),
         {
           username,
+          usernameKey: keySafeUsername,
           traits: [],
           isHost,
         },
@@ -311,7 +266,7 @@ export default function GameEnd({ route, navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -328,7 +283,7 @@ export default function GameEnd({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <Image
-            source={require("../assets/logoNew.png")}
+            source={logoSource}
             style={ge.logo}
           />
           <View style={ge.heroCard}>
@@ -345,17 +300,9 @@ export default function GameEnd({ route, navigation }) {
                   color="#FFD700"
                 />
               </View>
-              <Text style={ge.heroEyebrow}>Game finished</Text>
-              <Text style={ge.heroTitle}>
-                {champion
-                  ? `${champion.username} claimed the crown`
-                  : "Thanks for playing Treffipeli"}
-              </Text>
-              <Text style={ge.heroSubtitle}>
-                {champion
-                  ? `Winning date: ${champion.treffit}. Ready for another round?`
-                  : "Create a new game or head back to the lobby - the next round awaits!"}
-              </Text>
+              <Text style={ge.heroEyebrow}>{t("Game finished")}</Text>
+              <Text style={ge.heroTitle}>{heroTitle}</Text>
+              <Text style={ge.heroSubtitle}>{heroSubtitle}</Text>
               {champion ? (
                 <View style={ge.heroMetaRow}>
                   <Ionicons
@@ -364,9 +311,7 @@ export default function GameEnd({ route, navigation }) {
                     color="#F8ECFF"
                     style={ge.heroMetaIcon}
                   />
-                  <Text style={ge.heroMetaText}>
-                    {champion.accepted || 0} accepted traits
-                  </Text>
+                  <Text style={ge.heroMetaText}>{heroMetaText}</Text>
                 </View>
               ) : null}
             </LinearGradient>
@@ -393,7 +338,7 @@ export default function GameEnd({ route, navigation }) {
                   color="#F8ECFF"
                   style={{ marginRight: 8 }}
                 />
-                <Text style={ge.sectionLabel}>Longest Dates</Text>
+                <Text style={ge.sectionLabel}>{t("Longest Dates")}</Text>
               </View>
               {champion ? (
                 <View style={ge.sectionChip}>
@@ -403,14 +348,15 @@ export default function GameEnd({ route, navigation }) {
                     color="#FFD700"
                     style={{ marginRight: 6 }}
                   />
-                  <Text style={ge.sectionChipText}>Winner</Text>
+                  <Text style={ge.sectionChipText}>{t("Winner")}</Text>
                 </View>
               ) : null}
             </View>
 
             {longestLeaders.length ? (
               longestLeaders.map((player, index) => {
-                const matchLabel = player.accepted === 1 ? "match" : "matches";
+                const matchLabel =
+                  player.accepted === 1 ? t("match") : t("matches");
                 const isChampion = index === 0;
                 return (
                   <View
@@ -460,7 +406,7 @@ export default function GameEnd({ route, navigation }) {
                           isChampion ? ge.scoreTextChampion : null,
                         ]}
                       >
-                        Date {player.treffit}
+                        {t("Date {{number}}", { number: player.treffit })}
                       </Text>
                     </View>
                   </View>
@@ -475,7 +421,9 @@ export default function GameEnd({ route, navigation }) {
                   style={{ marginBottom: 10 }}
                 />
                 <Text style={ge.emptyState}>
-                  The leaderboard will update as soon as players finish their rounds.
+                  {t(
+                    "The leaderboard will update as soon as players finish their rounds.",
+                  )}
                 </Text>
               </View>
             )}
@@ -490,13 +438,14 @@ export default function GameEnd({ route, navigation }) {
                   color="#F8ECFF"
                   style={{ marginRight: 8 }}
                 />
-                <Text style={ge.sectionLabel}>Most Skips</Text>
+                <Text style={ge.sectionLabel}>{t("Most Skips")}</Text>
               </View>
             </View>
 
             {skipLeaders.length ? (
               skipLeaders.map((player, index) => {
-                const skipLabel = player.skipCount === 1 ? "skip" : "skips";
+                const skipLabel =
+                  player.skipCount === 1 ? t("skip") : t("skips");
                 const isTopSkipper = index === 0 && player.skipCount > 0;
                 return (
                   <View
@@ -531,7 +480,9 @@ export default function GameEnd({ route, navigation }) {
                         {player.username}
                       </Text>
                       <Text style={ge.leaderMeta}>
-                        Longest date {player.treffit}
+                        {t("Longest date {{number}}", {
+                          number: player.treffit,
+                        })}
                       </Text>
                     </View>
                     <View
@@ -561,7 +512,9 @@ export default function GameEnd({ route, navigation }) {
                   style={{ marginBottom: 10 }}
                 />
                 <Text style={ge.emptyState}>
-                  Skips are tracked once players start making decisions.
+                  {t(
+                    "Skips are tracked once players start making decisions.",
+                  )}
                 </Text>
               </View>
             )}
@@ -580,7 +533,7 @@ export default function GameEnd({ route, navigation }) {
               style={ge.actionButton}
             >
               <LinearGradient
-                colors={["#906AFE", "#ff66c4"]}
+                colors={["#FFB347", "#FF416C"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={ge.actionButtonGradient}
@@ -591,7 +544,7 @@ export default function GameEnd({ route, navigation }) {
                   color="#ffffff"
                   style={ge.actionIcon}
                 />
-                <Text style={ge.actionText}>Play again</Text>
+                <Text style={ge.actionText}>{t("Play again")}</Text>
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity
@@ -600,7 +553,7 @@ export default function GameEnd({ route, navigation }) {
               style={[ge.actionButton, ge.secondaryActionButton]}
             >
               <LinearGradient
-                colors={["rgba(255,255,255,0.14)", "rgba(255,255,255,0.05)"]}
+                colors={["#42E695", "#3BB2B8"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={ge.actionButtonGradient}
@@ -608,10 +561,10 @@ export default function GameEnd({ route, navigation }) {
                 <Ionicons
                   name="home-outline"
                   size={20}
-                  color="#F8ECFF"
+                  color="#ffffff"
                   style={ge.actionIcon}
                 />
-                <Text style={ge.actionText}>Back to lobby</Text>
+                <Text style={ge.actionText}>{t("Back to lobby")}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -906,10 +859,15 @@ const ge = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
     marginHorizontal: 6,
+    shadowColor: "rgba(0,0,0,0.35)",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 8,
   },
   secondaryActionButton: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    shadowColor: "rgba(66, 230, 149, 0.45)",
+    shadowOpacity: 0.5,
   },
   actionButtonGradient: {
     flexDirection: "row",
@@ -927,6 +885,8 @@ const ge = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+
 
 
 

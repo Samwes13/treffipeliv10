@@ -17,6 +17,7 @@ import JoinGame from "./components/JoinGame";
 import GamePlay from "./components/GamePlay";
 import GameEnd from "./components/GameEnd";
 import DebugSimulate from "./components/DebugSimulate";
+import { LanguageProvider } from "./contexts/LanguageContext";
 
 export default function App() {
   const Stack = createNativeStackNavigator();
@@ -66,8 +67,17 @@ export default function App() {
         return;
       }
       try {
-        const { default: mobileAds } = await loadGoogleMobileAds();
-        await mobileAds().initialize();
+        const adsModule = await loadGoogleMobileAds();
+        const mobileAdsInstance =
+          typeof adsModule.default === "function"
+            ? adsModule.default()
+            : adsModule.mobileAds();
+        mobileAdsInstance.setRequestConfiguration({
+          tagForChildDirectedTreatment: false,
+          tagForUnderAgeOfConsent: false,
+          maxAdContentRating: "PG",
+        });
+        await mobileAdsInstance.initialize();
       } catch (e) {
         console.log("Ads init skipped:", e?.message || String(e));
       }
@@ -79,55 +89,57 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer linking={linking} theme={navTheme}>
-        <StatusBar translucent backgroundColor="transparent" style="light" />
-        <Stack.Navigator
-          initialRouteName="EnterUsername"
-          screenOptions={{ contentStyle: { backgroundColor: "transparent" } }}
-        >
-          <Stack.Screen
-            name="EnterUsername"
-            component={EnterUsername}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="GameOptionScreen"
-            component={GameOptionScreen}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="GameLobby"
-            component={GameLobby}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="JoinGame"
-            component={JoinGame}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="CardTraits"
-            component={CardTraits}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="GamePlay"
-            component={GamePlay}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="GameEnd"
-            component={GameEnd}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="DebugSimulate"
-            component={DebugSimulate}
-            options={{ headerShown: false }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <LanguageProvider>
+      <SafeAreaProvider>
+        <NavigationContainer linking={linking} theme={navTheme}>
+          <StatusBar translucent backgroundColor="transparent" style="light" />
+          <Stack.Navigator
+            initialRouteName="EnterUsername"
+            screenOptions={{ contentStyle: { backgroundColor: "transparent" } }}
+          >
+            <Stack.Screen
+              name="EnterUsername"
+              component={EnterUsername}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="GameOptionScreen"
+              component={GameOptionScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="GameLobby"
+              component={GameLobby}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="JoinGame"
+              component={JoinGame}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="CardTraits"
+              component={CardTraits}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="GamePlay"
+              component={GamePlay}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="GameEnd"
+              component={GameEnd}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="DebugSimulate"
+              component={DebugSimulate}
+              options={{ headerShown: false }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </LanguageProvider>
   );
 }

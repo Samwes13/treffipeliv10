@@ -6,6 +6,7 @@ import { seedPlayersWithTraits } from "../utils/debugSeed";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const BASE_TRAITS = [
   "Funny",
@@ -53,6 +54,7 @@ const BOT_NAMES = Array.from(
 export default function DebugSimulate({ navigation }) {
   const [logs, setLogs] = useState([]);
   const [running, setRunning] = useState(false);
+  const { t } = useLanguage();
 
   const log = (msg) => setLogs((l) => [msg, ...l].slice(0, 200));
 
@@ -143,7 +145,14 @@ export default function DebugSimulate({ navigation }) {
         const previousCount = seen.get(nextTrait.traitId) || 0;
         if (previousCount > 0) {
           duplicateCount += 1;
-          const message = `Duplicate trait encountered (#${duplicateCount}): ${nextTrait.traitId} - ${nextTrait.text}`;
+          const message = t(
+            "Duplicate trait encountered (#{{count}}): {{id}} - {{text}}",
+            {
+              count: duplicateCount,
+              id: nextTrait.traitId,
+              text: nextTrait.text,
+            },
+          );
           log(message);
           console.log(`[DebugSim] ${message}`);
         }
@@ -170,26 +179,32 @@ export default function DebugSimulate({ navigation }) {
 
     const offenders = Object.entries(decisionCounts).filter(([, c]) => c !== 6);
     if (offenders.length) {
-      log(
-        `Decision count mismatch: ${offenders.map(([u, c]) => `${u}:${c}`).join(", ")}`,
-      );
+      const details = offenders.map(([u, c]) => `${u}:${c}`).join(", ");
+      log(t("Decision count mismatch: {{details}}", { details }));
     } else {
-      log("All players made 6 decisions.");
+      log(t("All players made 6 decisions."));
     }
 
     if (duplicateCount > 0) {
-      const summary = `Duplicate traits encountered ${duplicateCount} time(s) during headless simulation.`;
+      const summary = t(
+        "Duplicate traits encountered {{count}} time(s) during headless simulation.",
+        { count: duplicateCount },
+      );
       log(summary);
       console.log(`[DebugSim] ${summary}`);
     } else {
-      const summary =
-        "No duplicate traits encountered during headless simulation.";
+      const summary = t(
+        "No duplicate traits encountered during headless simulation.",
+      );
       log(summary);
       console.log(`[DebugSim] ${summary}`);
     }
 
     log(
-      `Simulation finished at round ${currentRound}. UsedTraits count: ${usedTraits.length}. Unique used: ${seen.size}`,
+      t(
+        "Simulation finished at round {{round}}. Used traits: {{used}}. Unique traits: {{unique}}",
+        { round: currentRound, used: usedTraits.length, unique: seen.size },
+      ),
     );
   };
 
@@ -199,7 +214,12 @@ export default function DebugSimulate({ navigation }) {
     setLogs([]);
     try {
       const gamepin = `SIM${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-      log(`Creating game ${gamepin} with ${BOT_COUNT} bots...`);
+      log(
+        t("Creating game {{pin}} with {{count}} bots...", {
+          pin: gamepin,
+          count: BOT_COUNT,
+        }),
+      );
       await seedPlayersWithTraits({
         gamepin,
         usernames: BOT_NAMES,
@@ -212,9 +232,9 @@ export default function DebugSimulate({ navigation }) {
           return toSevenSentences(base, idx, traitIndex);
         },
       });
-      log("Starting game with all traits (ID-unique during play)...");
+      log(t("Starting game with all traits (ID-unique during play)..."));
       const list = await startGameWithDedup(gamepin);
-      log(`Total traits loaded: ${list.length}`);
+      log(t("Total traits loaded: {{count}}", { count: list.length }));
       const useUiAutoplay = __DEV__ === true;
       try {
         navigation.navigate("GamePlay", {
@@ -225,15 +245,17 @@ export default function DebugSimulate({ navigation }) {
       } catch (_) {}
       if (useUiAutoplay) {
         log(
-          "Autoplay running inside GamePlay. Check console for duplicate trait stats.",
+          t(
+            "Autoplay running inside GamePlay. Check console for duplicate trait stats.",
+          ),
         );
       } else {
         await simulateRounds(gamepin);
-        log("Headless simulation complete.");
+        log(t("Headless simulation complete."));
       }
     } catch (e) {
       console.error(e);
-      log(`Error: ${e?.message || e}`);
+      log(t("Error: {{message}}", { message: e?.message || String(e) }));
     } finally {
       setRunning(false);
     }
@@ -242,7 +264,7 @@ export default function DebugSimulate({ navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#906AFE", "transparent"]}
+        colors={["#ff66c4", "transparent"]}
         style={styles.background}
         start={{ x: 1, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -250,14 +272,16 @@ export default function DebugSimulate({ navigation }) {
       />
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <View style={styles.container}>
-          <Text style={styles.title}>Debug Bot Simulator</Text>
+          <Text style={styles.title}>{t("Debug Bot Simulator")}</Text>
           <TouchableOpacity
             style={[styles.button, running && styles.disabledButton]}
             disabled={running}
             onPress={run}
           >
             <Text style={styles.buttonText}>
-              {running ? "Running..." : `Run ${BOT_COUNT}-Bot Simulation`}
+              {running
+                ? t("Running...")
+                : t("Run {{count}}-Bot Simulation", { count: BOT_COUNT })}
             </Text>
           </TouchableOpacity>
           <ScrollView style={{ maxHeight: 300, marginTop: 16, width: "100%" }}>
@@ -272,3 +296,5 @@ export default function DebugSimulate({ navigation }) {
     </View>
   );
 }
+
+

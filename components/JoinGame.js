@@ -17,12 +17,17 @@ import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import ModalAlert from "./ModalAlert";
+import { useLanguage } from "../contexts/LanguageContext";
+import { toUserKey } from "../utils/userKey";
+import getLogoSource from "../utils/logo";
 
 const PIN_LENGTH = 6;
 
 export default function JoinGame({ navigation, route }) {
   const rawUsername = route.params?.username ?? "";
   const username = rawUsername.trim() || rawUsername;
+  const { t, language } = useLanguage();
+  const logoSource = getLogoSource(language);
 
   const [pincode, setPincode] = useState("");
   const [isChecking, setIsChecking] = useState(false);
@@ -56,9 +61,10 @@ export default function JoinGame({ navigation, route }) {
   const ensureUsername = () => {
     if (!username) {
       showAlert({
-        title: "Username Missing",
-        message:
+        title: t("Username Missing"),
+        message: t(
           "Use the back button to choose a username before joining a game.",
+        ),
         variant: "error",
       });
       navigation.navigate("EnterUsername");
@@ -75,8 +81,10 @@ export default function JoinGame({ navigation, route }) {
 
     if (formattedPin.length !== PIN_LENGTH) {
       showAlert({
-        title: "Check the Game Code",
-        message: `Game codes must be ${PIN_LENGTH} characters long.`,
+        title: t("Check the Game Code"),
+        message: t("Game codes must be {{length}} characters long.", {
+          length: PIN_LENGTH,
+        }),
         variant: "error",
       });
       return;
@@ -90,8 +98,34 @@ export default function JoinGame({ navigation, route }) {
 
       if (!gameSnapshot.exists()) {
         showAlert({
-          title: "Game Code Not Found",
-          message: "Make sure the code is correct and try again.",
+          title: t("Game Code Not Found"),
+          message: t("Make sure the code is correct and try again."),
+          variant: "error",
+        });
+        return;
+      }
+
+      const gameData = gameSnapshot.val() || {};
+      const players = gameData.players || {};
+      const normalizedDesired = username.trim().toLowerCase();
+      const usernameKey = toUserKey(username);
+
+      const nameInUse = Object.values(players || {}).some((player) => {
+        const candidate = (player?.username || "").trim().toLowerCase();
+        return candidate.length > 0 && candidate === normalizedDesired;
+      });
+      const keyConflict = Object.prototype.hasOwnProperty.call(
+        players,
+        usernameKey,
+      );
+
+      if (nameInUse || keyConflict) {
+        showAlert({
+          title: t("Name Already In Use"),
+          message: t(
+            "This game already has a player named {{name}}. Choose a different username.",
+            { name: username },
+          ),
           variant: "error",
         });
         return;
@@ -99,11 +133,12 @@ export default function JoinGame({ navigation, route }) {
 
       const playersRef = ref(
         database,
-        `games/${formattedPin}/players/${username}`,
+        `games/${formattedPin}/players/${usernameKey}`,
       );
 
       await set(playersRef, {
         username,
+        usernameKey,
         traits: [],
         isHost: false,
       });
@@ -112,8 +147,8 @@ export default function JoinGame({ navigation, route }) {
     } catch (error) {
       console.error("Error joining game", error);
       showAlert({
-        title: "Join Failed",
-        message: "Something went wrong. Please try again shortly.",
+        title: t("Join Failed"),
+        message: t("Something went wrong. Please try again shortly."),
         variant: "error",
       });
     } finally {
@@ -128,7 +163,7 @@ export default function JoinGame({ navigation, route }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={["#ff66c4", "#ffde59"]}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -153,10 +188,7 @@ export default function JoinGame({ navigation, route }) {
             keyboardDismissMode="on-drag"
           >
             <View style={localStyles.scrollInner}>
-              <Image
-                source={require("../assets/logoNew.png")}
-                style={localStyles.logo}
-              />
+              <Image source={logoSource} style={localStyles.logo} />
 
               <LinearGradient
                 colors={["rgba(255,255,255,0.82)", "rgba(255,255,255,0.55)"]}
@@ -167,14 +199,18 @@ export default function JoinGame({ navigation, route }) {
                 <View style={localStyles.card}>
                   <View style={localStyles.cardHeader}>
                     <View style={localStyles.cardBadge}>
-                      <Ionicons name="lock-open-outline" size={18} color="#906AFE" />
+                      <Ionicons
+                        name="lock-open-outline"
+                        size={18}
+                        color="#ff66c4"
+                      />
                       <Text style={localStyles.cardBadgeText}>
-                        Only the correct code unlocks entry
+                        {t("Only the correct code unlocks entry")}
                       </Text>
-                  </View>
-                    <Text style={localStyles.cardTitle}>Game Code</Text>
+                    </View>
+                    <Text style={localStyles.cardTitle}>{t("Game Code")}</Text>
                     <Text style={localStyles.cardCopy}>
-                      Each code uses six letters or numbers.
+                      {t("Each code uses six letters or numbers.")}
                     </Text>
                   </View>
 
@@ -189,15 +225,15 @@ export default function JoinGame({ navigation, route }) {
                     <Ionicons
                       name="key-outline"
                       size={24}
-                      color="#906AFE"
+                      color="#ff66c4"
                       style={localStyles.inputIcon}
                     />
                     <TextInput
                       style={localStyles.input}
-                      placeholder="ABCDE1"
+                      placeholder={t("ABCDE1")}
                       value={formattedPin}
                       onChangeText={handleChangePin}
-                      placeholderTextColor="rgba(32, 26, 64, 0.35)"
+                      placeholderTextColor="rgba(45, 16, 42, 0.4)"
                       keyboardType="ascii-capable"
                       autoCorrect={false}
                       autoCapitalize="characters"
@@ -209,16 +245,19 @@ export default function JoinGame({ navigation, route }) {
 
                   <View style={localStyles.metaRow}>
                     <Text style={localStyles.helperLabel}>
-                      Characters: {formattedPin.length}/{PIN_LENGTH}
+                      {t("Characters: {{current}}/{{max}}", {
+                        current: formattedPin.length,
+                        max: PIN_LENGTH,
+                      })}
                     </Text>
                     <Text style={localStyles.helperAccent}>
-                      Use A-Z and 0-9
+                      {t("Use A-Z and 0-9")}
                     </Text>
                   </View>
 
                   <View style={localStyles.progressTrack}>
                     <LinearGradient
-                      colors={["#906AFE", "#ff66c4"]}
+                      colors={["#ff66c4", "#ffde59"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={[
@@ -238,13 +277,13 @@ export default function JoinGame({ navigation, route }) {
                     ]}
                   >
                     <LinearGradient
-                      colors={["#906AFE", "#ff66c4"]}
+                      colors={["#ff66c4", "#ffde59"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={localStyles.primaryButtonGradient}
                     >
                       <Text style={localStyles.primaryButtonText}>
-                        {isChecking ? "Checking…" : "Join Game"}
+                        {isChecking ? t("Checking...") : t("Join Game")}
                       </Text>
                       <Ionicons
                         name={
@@ -265,11 +304,11 @@ export default function JoinGame({ navigation, route }) {
                     <Ionicons
                       name="arrow-back"
                       size={20}
-                      color="#6B5D92"
+                      color="#c2724e"
                       style={{ marginRight: 6 }}
                     />
                     <Text style={localStyles.secondaryButtonText}>
-                      Back to game options
+                      {t("Back to game options")}
                     </Text>
                   </TouchableOpacity>
 
@@ -277,11 +316,11 @@ export default function JoinGame({ navigation, route }) {
                     <Ionicons
                       name="bulb-outline"
                       size={18}
-                      color="#906AFE"
+                      color="#ff66c4"
                       style={{ marginRight: 8 }}
                     />
                     <Text style={localStyles.hintBoxText}>
-                      If the code fails, double-check for typos.
+                      {t("If the code fails, double-check for typos.")}
                     </Text>
                   </View>
                 </View>
@@ -374,7 +413,7 @@ const localStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "rgba(144, 106, 254, 0.14)",
+    backgroundColor: "rgba(255, 145, 77, 0.14)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -384,25 +423,25 @@ const localStyles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 13,
     fontWeight: "600",
-    color: "#6B5D92",
+    color: "#c2724e",
   },
   cardTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#221641",
+    color: "#2d102a",
   },
   cardCopy: {
     marginTop: 8,
     fontSize: 15,
     lineHeight: 22,
-    color: "#554876",
+    color: "#6b3a45",
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(144, 106, 254, 0.28)",
+    borderColor: "rgba(255, 145, 77, 0.32)",
     backgroundColor: "#ffffff",
     paddingHorizontal: 16,
   },
@@ -417,7 +456,7 @@ const localStyles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: "600",
-    color: "#221641",
+    color: "#2d102a",
     paddingVertical: 16,
     letterSpacing: 4,
   },
@@ -430,12 +469,12 @@ const localStyles = StyleSheet.create({
   helperLabel: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#6B5D92",
+    color: "#c2724e",
   },
   helperAccent: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#906AFE",
+    color: "#ff66c4",
   },
   progressTrack: {
     marginTop: 18,
@@ -476,12 +515,12 @@ const localStyles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "rgba(144, 106, 254, 0.12)",
+    backgroundColor: "rgba(255, 145, 77, 0.12)",
   },
   secondaryButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#6B5D92",
+    color: "#c2724e",
   },
   hintBox: {
     marginTop: 24,
@@ -499,3 +538,5 @@ const localStyles = StyleSheet.create({
     color: "#5C4F84",
   },
 });
+
+

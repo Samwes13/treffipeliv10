@@ -2,6 +2,7 @@ import React from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
+import { useLanguage } from "../contexts/LanguageContext";
 
 export default function ModalAlert({
   visible,
@@ -11,8 +12,9 @@ export default function ModalAlert({
   buttons,
   variant = "info",
 }) {
+  const { t } = useLanguage();
   const palette = {
-    info: ["#5170ff", "#ff66c4"],
+    info: ["#ff66c4", "#ffde59"],
     error: ["#ef4444", "#f97316"],
     success: ["#22c55e", "#86efac"],
     warn: ["#f59e0b", "#f97316"],
@@ -23,7 +25,7 @@ export default function ModalAlert({
     const btns =
       Array.isArray(buttons) && buttons.length
         ? buttons
-        : [{ text: "OK", onPress: onClose }];
+        : [{ text: t("OK"), onPress: onClose }];
     return (
       <View style={ca.actions}>
         {btns.map((b, i) => (
@@ -38,7 +40,7 @@ export default function ModalAlert({
               }
             }}
           >
-            <Text style={styles.modalButtonText}>{b.text || "OK"}</Text>
+            <Text style={styles.modalButtonText}>{b.text || t("OK")}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -60,7 +62,7 @@ export default function ModalAlert({
             end={{ x: 1, y: 1 }}
             style={ca.header}
           >
-            <Text style={ca.headerTitle}>{title || "Notice"}</Text>
+            <Text style={ca.headerTitle}>{title || t("Notice")}</Text>
           </LinearGradient>
           {!!message && <Text style={ca.bodyText}>{message}</Text>}
           {renderButtons()}
@@ -106,3 +108,5 @@ const ca = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+

@@ -17,6 +17,10 @@ import { database } from "../firebaseConfig";
 import { LinearGradient } from "expo-linear-gradient";
 import ModalAlert from "./ModalAlert";
 import { Ionicons } from "@expo/vector-icons";
+import { useLanguage } from "../contexts/LanguageContext";
+import LanguageToggle from "./LanguageToggle";
+import theme from "../utils/theme";
+import getLogoSource from "../utils/logo";
 
 const USERNAME_SUGGESTIONS = [
   "AuroraSoul",
@@ -37,6 +41,8 @@ const getRandomSuggestion = () => {
 };
 
 export default function EnterUsername({ navigation }) {
+  const { t, language } = useLanguage();
+  const logoSource = getLogoSource(language);
   const [username, setUsername] = useState("");
   const [alertState, setAlertState] = useState({
     visible: false,
@@ -81,8 +87,8 @@ export default function EnterUsername({ navigation }) {
     if (trimmed.length < 3) {
       setAlertState({
         visible: true,
-        title: "Name Too Short",
-        message: "Enter at least 3 characters for your username.",
+        title: t("Name Too Short"),
+        message: t("Enter at least 3 characters for your username."),
         variant: "error",
       });
       return;
@@ -95,7 +101,7 @@ export default function EnterUsername({ navigation }) {
   return (
     <View style={{ flex: 1 }}>
       <LinearGradient
-        colors={["#5170ff", "#ff66c4"]}
+        colors={theme.backgroundGradient}
         style={styles.background}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -120,43 +126,47 @@ export default function EnterUsername({ navigation }) {
             keyboardDismissMode="on-drag"
           >
             <View style={localStyles.scrollInner}>
-              <Image
-                source={require("../assets/logoNew.png")}
-                style={localStyles.logo}
-              />
+              <View style={localStyles.headerRow}>
+                <LanguageToggle />
+              </View>
+
+              <Image source={logoSource} style={localStyles.logo} />
 
               <View style={localStyles.hero}>
                 <Text style={localStyles.heroTitle}>
-                  Welcome to Treffipeli!
+                  {t("Welcome to Treffipeli!")}
                 </Text>
               </View>
 
               <LinearGradient
-                colors={["rgba(255,255,255,0.72)", "rgba(255,255,255,0.25)"]}
+                colors={theme.cardFrameGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={localStyles.cardGradient}
               >
                 <View style={localStyles.card}>
-                  <Text style={localStyles.cardTitle}>Your Username</Text>
+                  <Text style={localStyles.cardTitle}>
+                    {t("Your Username")}
+                  </Text>
                   <Text style={localStyles.cardCopy}>
-                    This name is visible to other players during the game. You
-                    can change it later in settings.
+                    {t(
+                      "This name is visible to other players during the game. You can change it later in settings.",
+                    )}
                   </Text>
 
                   <View style={localStyles.inputWrapper}>
                     <Ionicons
                       name="person-circle-outline"
                       size={24}
-                      color="#906AFE"
+                      color={theme.accentPrimary}
                       style={localStyles.inputIcon}
                     />
                     <TextInput
                       style={localStyles.input}
-                      placeholder="e.g. VelvetEcho"
+                      placeholder={t("e.g. VelvetEcho")}
                       value={username}
                       onChangeText={handleInputChange}
-                      placeholderTextColor="rgba(32, 26, 64, 0.35)"
+                      placeholderTextColor={theme.placeholder}
                       maxLength={16}
                       returnKeyType="go"
                       autoCapitalize="none"
@@ -168,10 +178,12 @@ export default function EnterUsername({ navigation }) {
 
                   <View style={localStyles.metaRow}>
                     <Text style={localStyles.helperLabel}>
-                      Characters: {usernameLength}/16
+                      {t("Characters: {{count}}/16", {
+                        count: usernameLength,
+                      })}
                     </Text>
                     <Text style={localStyles.helperAccent}>
-                      Recommended: 3-16 characters
+                      {t("Recommended: 3-16 characters")}
                     </Text>
                   </View>
 
@@ -183,10 +195,10 @@ export default function EnterUsername({ navigation }) {
                     <Ionicons
                       name="sparkles-outline"
                       size={20}
-                      color="#906AFE"
+                      color={theme.accentSecondary}
                     />
-                     <Text style={localStyles.secondaryButtonText}>
-                      Generate Username
+                    <Text style={localStyles.secondaryButtonText}>
+                      {t("Generate Username")}
                     </Text>
                   </TouchableOpacity>
 
@@ -196,13 +208,13 @@ export default function EnterUsername({ navigation }) {
                     style={localStyles.primaryButton}
                   >
                     <LinearGradient
-                      colors={["#906AFE", "#ff66c4"]}
+                      colors={theme.primaryButtonGradient}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={localStyles.primaryButtonGradient}
                     >
                       <Text style={localStyles.primaryButtonText}>
-                        Continue to Game
+                        {t("Continue to Game")}
                       </Text>
                       <Ionicons
                         name="arrow-forward-circle"
@@ -213,13 +225,13 @@ export default function EnterUsername({ navigation }) {
                   </TouchableOpacity>
 
                   <Text style={localStyles.helperText}>
-                    Tip: Short, punchy usernames are easier to remember.
+                    {t("Tip: Short, punchy usernames are easier to remember.")}
                   </Text>
                 </View>
               </LinearGradient>
 
               <View style={localStyles.footer}>
-                <Text style={localStyles.footerLabel}>Treffipeli</Text>
+                <Text style={localStyles.footerLabel}>{t("Treffipeli")}</Text>
               </View>
             </View>
           </ScrollView>
@@ -241,6 +253,11 @@ const localStyles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  headerRow: {
+    width: "100%",
+    alignItems: "flex-end",
+    marginBottom: 12,
+  },
   decorativeLayer: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -251,7 +268,7 @@ const localStyles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 200,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    backgroundColor: theme.blobPrimary,
     transform: [{ rotate: "18deg" }],
   },
   blobSmall: {
@@ -261,7 +278,7 @@ const localStyles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 160,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: theme.blobSecondary,
     transform: [{ rotate: "-14deg" }],
   },
   scroll: {
@@ -301,7 +318,7 @@ const localStyles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     textAlign: "center",
-    color: "rgba(255, 255, 255, 0.82)",
+    color: theme.heroSubtitle,
   },
   cardGradient: {
     width: "100%",
@@ -326,7 +343,7 @@ const localStyles = StyleSheet.create({
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(144, 106, 254, 0.14)",
+    backgroundColor: theme.badgeBackground,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -335,18 +352,18 @@ const localStyles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 13,
     fontWeight: "600",
-    color: "#6B5D92",
+    color: theme.badgeText,
   },
   cardTitle: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#221641",
+    color: theme.bodyText,
     marginTop: 22,
   },
   cardCopy: {
     fontSize: 15,
     lineHeight: 22,
-    color: "#554876",
+    color: theme.bodyMuted,
     marginTop: 8,
   },
   inputWrapper: {
@@ -355,7 +372,7 @@ const localStyles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(144, 106, 254, 0.28)",
+    borderColor: theme.accentMutedBorder,
     backgroundColor: "#ffffff",
     paddingHorizontal: 16,
   },
@@ -366,7 +383,7 @@ const localStyles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: "600",
-    color: "#221641",
+    color: theme.bodyText,
     paddingVertical: 14,
   },
   metaRow: {
@@ -381,13 +398,13 @@ const localStyles = StyleSheet.create({
     marginRight: 12,
     fontSize: 14,
     fontWeight: "500",
-    color: "#6B5D92",
+    color: theme.metaLabel,
   },
   helperAccent: {
     flexShrink: 1,
     fontSize: 14,
     fontWeight: "600",
-    color: "#906AFE",
+    color: theme.accentSecondary,
     textAlign: "right",
   },
   secondaryButton: {
@@ -395,7 +412,7 @@ const localStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "rgba(144, 106, 254, 0.12)",
+    backgroundColor: theme.accentMuted,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -404,7 +421,7 @@ const localStyles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 15,
     fontWeight: "600",
-    color: "#6B5D92",
+    color: theme.metaLabel,
   },
   primaryButton: {
     marginTop: 24,
@@ -426,7 +443,7 @@ const localStyles = StyleSheet.create({
     marginTop: 22,
     fontSize: 13,
     lineHeight: 20,
-    color: "#7C73A3",
+    color: theme.helperText,
     textAlign: "center",
   },
   footer: {

@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   },
   playerAvatarWaiting: {
     backgroundColor: '#f0eaff',
-    borderColor: '#906AFE',
+    borderColor: '#ff66c4',
   },
   playerAvatarText: {
     fontSize: 22,
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(128, 201, 56, 0.18)',
   },
   playerStatusWaiting: {
-    backgroundColor: 'rgba(144, 106, 254, 0.18)',
+    backgroundColor: 'rgba(255, 145, 77, 0.18)',
   },
   playerStatusText: {
     fontSize: 12,
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
     pointerEvents: 'none',
-    backgroundColor: '#906AFE',
+    backgroundColor: '#ff66c4',
   },
   animationContainer: {
     position: 'absolute',
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
   },
   debugCardActive: {
     borderWidth: 2,
-    borderColor: '#5170ff',
+    borderColor: '#ff66c4',
   },
   debugCardDone: {
     borderWidth: 2,
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   modalButton: {
-    backgroundColor: '#5170ff',
+    backgroundColor: '#ff66c4',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -575,6 +575,8 @@ const styles = StyleSheet.create({
 });
 
 export default styles;
+
+
 
 
 
