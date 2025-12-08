@@ -21,6 +21,8 @@ import { useLanguage } from "../contexts/LanguageContext";
 import LanguageToggle from "./LanguageToggle";
 import theme from "../utils/theme";
 import getLogoSource from "../utils/logo";
+import SettingsModal from "./SettingsModal";
+import PlusModal from "./PlusModal";
 
 const USERNAME_SUGGESTIONS = [
   "AuroraSoul",
@@ -50,6 +52,13 @@ export default function EnterUsername({ navigation }) {
     message: "",
     variant: "info",
   });
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlus, setShowPlus] = useState(false);
+  const planName = "Plus";
+  const planPrice = "2,99 EUR";
+  const handleRestorePurchases = () => {
+    console.log("Restore purchases tapped");
+  };
 
   const usernameLength = username.trim().length;
 
@@ -127,7 +136,21 @@ export default function EnterUsername({ navigation }) {
           >
             <View style={localStyles.scrollInner}>
               <View style={localStyles.headerRow}>
-                <LanguageToggle />
+                <TouchableOpacity
+                  style={localStyles.settingsButton}
+                  onPress={() => setShowSettings(true)}
+                  activeOpacity={0.8}
+                  accessibilityLabel={t("Settings")}
+                >
+                  <LinearGradient
+                    colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0.14)"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={localStyles.settingsButtonGradient}
+                  >
+                    <Ionicons name="settings-outline" size={20} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
 
               <Image source={logoSource} style={localStyles.logo} />
@@ -236,6 +259,22 @@ export default function EnterUsername({ navigation }) {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          onOpenPlus={() => {
+            setShowSettings(false);
+            setShowPlus(true);
+          }}
+        />
+        <PlusModal
+          visible={showPlus}
+          onClose={() => setShowPlus(false)}
+          planName={planName}
+          planPrice={planPrice}
+          onRestorePurchases={handleRestorePurchases}
+        />
       </SafeAreaView>
 
       <ModalAlert
@@ -257,6 +296,20 @@ const localStyles = StyleSheet.create({
     width: "100%",
     alignItems: "flex-end",
     marginBottom: 12,
+  },
+  settingsButton: {
+    padding: 2,
+    borderRadius: 18,
+  },
+  settingsButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   decorativeLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -286,8 +339,8 @@ const localStyles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    paddingVertical: 48,
+    paddingTop: 28,
+    paddingBottom: 32,
     paddingHorizontal: 24,
   },
   scrollInner: {

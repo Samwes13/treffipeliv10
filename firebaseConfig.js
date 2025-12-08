@@ -1,22 +1,37 @@
 // firebaseConfig.js
 import { initializeApp } from 'firebase/app';
-// Poistetaan Analytics import
-// import { getAnalytics } from 'firebase/analytics';
 import { getDatabase } from 'firebase/database';
+import {
+  getAuth,
+  initializeAuth,
+  getReactNativePersistence,
+} from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDuiOW2N2aeEuW1BxBXF6onDJPGFI5y4sI",
-  authDomain: "treffipelifireba.firebaseapp.com",
-  projectId: "treffipelifireba",
-  storageBucket: "treffipelifireba.appspot.com",
-  messagingSenderId: "98059928267",
-  appId: "1:98059928267:web:b67b1343edb45b3d7f514e",
-  measurementId: "G-Z65GMN5J0T",
-  databaseURL: "https://treffipelifireba-default-rtdb.europe-west1.firebasedatabase.app/" // Tämä on tärkeä!
+  apiKey: "AIzaSyCx3-8SmOjmuREYenG3G3sKHUFJncyEwsQ",
+  authDomain: "treffipelifirebase.firebaseapp.com",
+  databaseURL:
+    "https://treffipelifirebase-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "treffipelifirebase",
+  storageBucket: "treffipelifirebase.firebasestorage.app",
+  messagingSenderId: "879718367340",
+  appId: "1:879718367340:web:ab32a1317aaf492cd8d849",
+  measurementId: "G-EBV71GRRQ5",
 };
 
 
 const app = initializeApp(firebaseConfig);
-// Analytics pois käytöstä
-// const analytics = getAnalytics(app);
+
+// Expo/React Native needs persistence defined; fall back to default if already initialized.
+let auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+} catch (e) {
+  auth = getAuth(app);
+}
+
 export const database = getDatabase(app);
+export { auth };

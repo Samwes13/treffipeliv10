@@ -20,6 +20,8 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
 import useInterstitialAd from "../hooks/useInterstitialAd";
+import { clearSession } from "../utils/session";
+import { usePlus } from "../contexts/PlusContext";
 //import AdSenseBanner from './AdSenseBanner'; // Tuo AdSense-komponentti
 
 let WebBannerAd = null;
@@ -37,6 +39,7 @@ export default function GameEnd({ route, navigation }) {
   const { gamepin, username } = route.params || {};
   const [players, setPlayers] = useState([]);
   const { t, language } = useLanguage();
+  const { isPlus } = usePlus();
   const logoSource = getLogoSource(language);
 
   const longestLeaders = useMemo(() => {
@@ -132,6 +135,10 @@ export default function GameEnd({ route, navigation }) {
     }, [navigation]),
   );
 
+  useEffect(() => {
+    clearSession();
+  }, []);
+
   // Peli poistetaan 5 minuutin kuluttua
   useEffect(() => {
     const deleteGameTimeout = setTimeout(
@@ -156,7 +163,7 @@ export default function GameEnd({ route, navigation }) {
     screenName: "GameEnd",
     autoShow: true,
     showDelayMs: 800,
-    enabled: Boolean(gamepin && username),
+    enabled: Boolean(gamepin && username) && !isPlus,
   });
 
   // Load leaderboard once
@@ -172,7 +179,8 @@ export default function GameEnd({ route, navigation }) {
           const accepted = Array.isArray(p.acceptedTraits)
             ? p.acceptedTraits.length
             : 0;
-          const treffit = accepted + 1; // 0 -> 1., 2 -> 3., etc.
+          // Dates played are equivalent to accepted traits, capped to max 6 rounds.
+          const treffit = Math.min(accepted, 6);
           const skipCount = Number(p.skipCount || 0);
           return {
             username: p.username || key,

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ref,
   onValue,
@@ -27,6 +27,10 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
 import useInterstitialAd from "../hooks/useInterstitialAd";
+import SettingsModal from "./SettingsModal";
+import PlusModal from "./PlusModal";
+import { saveSession, clearSession } from "../utils/session";
+import { usePlus } from "../contexts/PlusContext";
 
 const INITIAL_ANIMATION_DURATION_MS = 4000;
 const GAME_START_COUNTDOWN_MS = 4000;
@@ -41,14 +45,45 @@ export default function GameLobby({ route, navigation }) {
   const [allPlayersReady, setAllPlayersReady] = useState(false);
   const [playerToRemove, setPlayerToRemove] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [leaveInProgress, setLeaveInProgress] = useState(false);
   const [countdownData, setCountdownData] = useState(null);
   const [countdownStep, setCountdownStep] = useState(null);
   const [countdownActive, setCountdownActive] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlus, setShowPlus] = useState(false);
   const hasNavigatedRef = useRef(false);
+  const insets = useSafeAreaInsets();
   const { t, language } = useLanguage();
+  const { isPlus } = usePlus();
   const logoSource = getLogoSource(language);
   const goLabel = t("GO!");
   const usernameKey = useMemo(() => toUserKey(username), [username]);
+  const planName = "Plus";
+  const planPrice = "2,99 EUR";
+  const handleRestorePurchases = () => {
+    console.log("Restore purchases tapped");
+  };
+
+  const leaveLobby = async () => {
+    if (leaveInProgress) {
+      return;
+    }
+    setLeaveInProgress(true);
+    try {
+      const playerKey = usernameKey;
+      const playerRef = ref(database, `games/${gamepin}/players/${playerKey}`);
+      const traitsRef = ref(database, `games/${gamepin}/traits/${playerKey}`);
+      await Promise.all([remove(playerRef), remove(traitsRef)]);
+      await clearSession();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "GameOptionScreen", params: { username } }],
+      });
+    } catch (error) {
+      console.error("Failed to leave lobby:", error);
+      setLeaveInProgress(false);
+    }
+  };
 
   useEffect(() => {
     const gameRef = ref(database, `games/${gamepin}`);
@@ -111,8 +146,14 @@ export default function GameLobby({ route, navigation }) {
     screenName: "GameLobby",
     autoShow: true,
     showDelayMs: 600,
-    enabled: Boolean(gamepin),
+    enabled: Boolean(gamepin) && !isPlus,
   });
+
+  useEffect(() => {
+    if (username && gamepin) {
+      saveSession(username, gamepin);
+    }
+  }, [username, gamepin]);
 
   useEffect(() => {
     if (!countdownData?.startAt || !countdownData?.durationMs) {
@@ -618,6 +659,20 @@ export default function GameLobby({ route, navigation }) {
           <View style={localStyles.blobLarge} />
           <View style={localStyles.blobSmall} />
         </View>
+        <TouchableOpacity
+          style={[
+            localStyles.settingsButton,
+            {
+              top: (insets?.top || 0) + 14,
+              right: 18,
+            },
+          ]}
+          onPress={() => setShowSettings(true)}
+          activeOpacity={0.8}
+          accessibilityLabel={t("Settings")}
+        >
+          <Ionicons name="settings-outline" size={22} color="#fff" />
+        </TouchableOpacity>
 
         <View style={localStyles.container}>
           <FlatList
@@ -687,6 +742,23 @@ export default function GameLobby({ route, navigation }) {
             </LinearGradient>
           </View>
         )}
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          onOpenPlus={() => {
+            setShowSettings(false);
+            setShowPlus(true);
+          }}
+          showLeave
+          onLeave={leaveLobby}
+        />
+        <PlusModal
+          visible={showPlus}
+          onClose={() => setShowPlus(false)}
+          planName={planName}
+          planPrice={planPrice}
+          onRestorePurchases={handleRestorePurchases}
+        />
       </SafeAreaView>
     </View>
   );
@@ -1051,6 +1123,41 @@ const localStyles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#ffffff",
+  },
+  leaveButton: {
+    marginTop: 14,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#13093A",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  leaveButtonDisabled: {
+    opacity: 0.65,
+  },
+  leaveButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  leaveIcon: {
+    marginRight: 8,
+  },
+  leaveText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  settingsButton: {
+    position: "absolute",
+    zIndex: 10,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.28)",
   },
 });
 

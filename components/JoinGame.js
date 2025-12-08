@@ -20,6 +20,7 @@ import ModalAlert from "./ModalAlert";
 import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
+import { saveSession } from "../utils/session";
 
 const PIN_LENGTH = 6;
 
@@ -142,6 +143,8 @@ export default function JoinGame({ navigation, route }) {
         traits: [],
         isHost: false,
       });
+
+      await saveSession(username, formattedPin);
 
       navigation.navigate("CardTraits", { username, gamepin: formattedPin });
     } catch (error) {

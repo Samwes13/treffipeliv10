@@ -20,70 +20,146 @@ import ModalAlert from "./ModalAlert";
 import { Ionicons } from "@expo/vector-icons";
 import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
+import { usePlus } from "../contexts/PlusContext";
 
 const TRAIT_COUNT = 6;
-const SAMPLE_TRAIT_PRESETS_EN = [
-  [
-    "Curates epic weekend plans",
-    "Remembers tiny details",
-    "Spontaneous road-tripper",
-    "Leaves mugs everywhere",
-    "Perpetual alarm snoozer",
-    "Overbooks every evening",
-  ],
-  [
-    "Board game tactician",
-    "Finds new coffee spots",
-    "Always up for karaoke",
-    "Dodges tough talks",
-    "Hates planning ahead",
-    "Forgets birthdays",
-  ],
-  [
-    "Cheerful morning person",
-    "Great with pets",
-    "Organises friend hangouts",
-    "Spends hours scrolling",
-    "Goes silent mid-chat",
-    "Cancels last minute",
-  ],
-];
-const SAMPLE_TRAIT_PRESETS_FI = [
-  [
-    "Keksii eeppiset viikonloppusuunnitelmat",
-    "Muistaa pienimmätkin yksityiskohdat",
-    "Lähtee hetken mielijohteesta roadtripille",
-    "Jättää mukit lojumaan kaikkialle",
-    "Torkuttaa herätyksen aina uudestaan",
-    "Ahtaa kalenterin täyteen iltamenoja",
-  ],
-  [
-    "Lautapelitaktiikko",
-    "Löytää uudet kahvilat",
-    "Aina valmis karaokelle",
-    "Väistelee hankalia puheita",
-    "Inhoaa ennakkosuunnittelua",
-    "Unohtaa syntymäpäivät",
-  ],
-  [
-    "Hyvällä tuulella aamusta alkaen",
-    "Tulee eläinten kanssa toimeen",
-    "Järjestää kaveriporukan tapaamisia",
-    "Selaillee somea tuntikausia",
-    "Hiljenee kesken viestin",
-    "Peruu viime hetkellä",
-  ],
+const TURN_ON_TRAITS_EN = [
+  "Always brings snacks",
+  "Plans surprise dates",
+  "Remembers small details",
+  "Laughs easily",
+  "Keeps promises",
+  "Great with pets",
+  "Cooks new recipes",
+  "Sends good morning texts",
+  "Organises friend hangouts",
+  "Punctual and prepared",
+  "Spontaneous road-tripper",
+  "Board game strategist",
+  "Finds new coffee spots",
+  "Up for karaoke nights",
+  "Loves long walks",
+  "Enjoys museums",
+  "Great listener",
+  "Shares playlists",
+  "Good with money",
+  "Takes initiative",
+  "Keeps plants alive",
+  "Asks thoughtful questions",
+  "Adapts quickly",
+  "Comfortable in silence",
+  "Honest feedback giver",
+  "Makes people feel welcome",
+  "Active texter",
+  "Learn-by-doing attitude",
+  "Fixes small things at home",
+  "Plans cozy nights in",
 ];
 
-export default function CardTraits({ route, navigation }) {
-  const routeUsername = route.params?.username ?? "";
-  const gamepin = route.params?.gamepin ?? "";
-  const username = routeUsername.trim() || routeUsername;
+const TURN_OFF_TRAITS_EN = [
+  "Leaves dishes in the sink",
+  "Chronic phone scroller at dinner",
+  "Always late",
+  "Ghosts conversations",
+  "Cancels last minute",
+  "Forgets birthdays",
+  "Talks over others",
+  "Avoids tough talks",
+  "Leaves mugs everywhere",
+  "Hates planning ahead",
+  "Scrolls during movies",
+  "Overbooks every evening",
+  "Perpetual alarm snoozer",
+  "Never answers calls",
+  "Brings work to dates",
+  "Messy car",
+  "Interrupts stories",
+  "Changes plans often",
+  "Talks only about self",
+  "Leaves lights on",
+  "Loud eater",
+  "Ignores messages for days",
+  "Always on speakerphone",
+  "Forgets to lock doors",
+  "Spends hours gaming",
+  "Overshares online",
+  "Leaves laundry out",
+  "Hates trying new food",
+  "Doesn't tip",
+  "Snores loudly",
+];
+
+const TURN_ON_TRAITS_FI = [
+  "Tuo aina snacksit",
+  "Keksii yllätystreffejä",
+  "Muistaa pienet yksityiskohdat",
+  "Nauraa helposti",
+  "Pitää lupaukset",
+  "Hyvä lemmikkien kanssa",
+  "Kokeilee uusia reseptejä",
+  "Lähettää hyvän huomenen viestejä",
+  "Järjestää kaveri-illat",
+  "Täsmällinen ja valmis",
+  "Lähtisi roadtripille heti",
+  "Lautapelistrategi",
+  "Löytää uudet kahvilat",
+  "Aina valmis karaokeseen",
+  "Rakastaa pitkiä kävelyjä",
+  "Fiilistelee museoita",
+  "Kuuntelee oikeasti",
+  "Jakaa soittolistoja",
+  "Taloudenpito hallussa",
+  "Ottaa aloitetta",
+  "Hoitaa kasvit hengissä",
+  "Kysyy hyviä kysymyksiä",
+  "Mukautuu nopeasti",
+  "Mukava olla hiljaa yhdessä",
+  "Antaa rehellistä palautetta",
+  "Saa muut tuntemaan olonsa tervetulleeksi",
+  "Vastaa viesteihin nopeasti",
+  "Tekee mieluummin kuin puhuu",
+  "Korjaa pieniä juttuja kotona",
+  "Suunnittelee kotoisia iltoja",
+];
+
+const TURN_OFF_TRAITS_FI = [
+  "Jättää astiat altaaseen",
+  "Tuijottaa puhelinta ruokapöydässä",
+  "On aina myöhässä",
+  "Katoaa kesken keskustelun",
+  "Peruu viime hetkellä",
+  "Unohtaa synttärit",
+  "Puhuu päälle",
+  "Välttelee vaikeita juttuja",
+  "Jättää mukit lojumaan",
+  "Vihaa suunnittelua",
+  "Selaa leffaa katsoessa",
+  "Varaa kalenterin liian täyteen",
+  "Torkuttaa herätyksiä",
+  "Ei vastaa puheluihin",
+  "Tuo töitä treffeille",
+  "Sotkuinen auto",
+  "Keskeyttää tarinat",
+  "Muuttaa suunnitelmia jatkuvasti",
+  "Puhuu vain itsestään",
+  "Unohtaa valot päälle",
+  "Syö kovaan ääneen",
+  "Ei vastaa viesteihin päiviin",
+  "Kaiutin päällä julkisesti",
+  "Unohtaa lukita ovet",
+  "Pelaa tuntikausia",
+  "Jaa liikaa somessa",
+  "Jättää pyykit viikoiksi",
+  "Ei suostu kokeilemaan uusia ruokia",
+  "Ei jätä tippiä",
+  "Kuorsaa kovaa",
+];
+
+export default function CardTraits({ navigation, route }) {
   const { t, language } = useLanguage();
-
+  const { username = "", gamepin = "" } = route.params || {};
+  const { isPlus } = usePlus();
   const [traits, setTraits] = useState(Array(TRAIT_COUNT).fill(""));
-  const scrollRef = useRef(null);
-  const inputWrapperRefs = useRef([]);
   const [touchedInputs, setTouchedInputs] = useState({});
   const [alertState, setAlertState] = useState({
     visible: false,
@@ -91,8 +167,12 @@ export default function CardTraits({ route, navigation }) {
     message: "",
     variant: "info",
   });
-  const presetPool =
-    language === "fi" ? SAMPLE_TRAIT_PRESETS_FI : SAMPLE_TRAIT_PRESETS_EN;
+  const scrollRef = useRef(null);
+  const inputWrapperRefs = useRef([]);
+
+  const turnOnPool = language === "fi" ? TURN_ON_TRAITS_FI : TURN_ON_TRAITS_EN;
+  const turnOffPool =
+    language === "fi" ? TURN_OFF_TRAITS_FI : TURN_OFF_TRAITS_EN;
 
   const keySafeUsername = useMemo(() => toUserKey(username), [username]);
 
@@ -146,10 +226,18 @@ export default function CardTraits({ route, navigation }) {
   };
 
   const handleAutoFill = () => {
-    const preset =
-      presetPool[Math.floor(Math.random() * presetPool.length)] ||
-      presetPool[0];
-    setTraits(preset.slice(0, TRAIT_COUNT));
+    const pickRandom = (pool, count) => {
+      const copy = [...pool];
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, count);
+    };
+
+    const selectedOn = pickRandom(turnOnPool, 3);
+    const selectedOff = pickRandom(turnOffPool, 3);
+    setTraits([...selectedOn, ...selectedOff]);
     setTouchedInputs({});
   };
 
@@ -295,7 +383,9 @@ export default function CardTraits({ route, navigation }) {
     if (!gamepin) {
       showAlert({
         title: t("Game Code Missing"),
-        message: t("Game code not found. Go back to the previous screen and try again."),
+        message: t(
+          "Game code not found. Go back to the previous screen and try again.",
+        ),
         variant: "error",
       });
       navigation.goBack();
@@ -427,15 +517,19 @@ export default function CardTraits({ route, navigation }) {
                       )}
                     </Text>
                     <View style={localStyles.quickActions}>
-                      <TouchableOpacity
-                        activeOpacity={0.92}
-                        onPress={handleAutoFill}
-                        style={localStyles.quickButton}
-                      >
-                        <LinearGradient
-                          colors={["#ff66c4", "#ffde59"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                  <TouchableOpacity
+                    activeOpacity={0.92}
+                    onPress={handleAutoFill}
+                    style={[
+                      localStyles.quickButton,
+                      !isPlus && localStyles.quickButtonDisabled,
+                    ]}
+                    disabled={!isPlus}
+                  >
+                    <LinearGradient
+                      colors={["#ff66c4", "#ffde59"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
                           style={localStyles.quickButtonGradient}
                         >
                           <Ionicons
@@ -934,6 +1028,9 @@ const localStyles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 18,
     borderRadius: 999,
+  },
+  quickButtonDisabled: {
+    opacity: 0.5,
   },
   quickButtonIcon: {
     marginRight: 8,

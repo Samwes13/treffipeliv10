@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
@@ -24,6 +24,10 @@ import LanguageToggle from "./LanguageToggle";
 import { toUserKey } from "../utils/userKey";
 import theme from "../utils/theme";
 import getLogoSource from "../utils/logo";
+import SettingsModal from "./SettingsModal";
+import PlusModal from "./PlusModal";
+import { saveSession } from "../utils/session";
+import { usePlus } from "../contexts/PlusContext";
 
 export default function GameOptionsScreen({ route, navigation }) {
   const rawUsername = route.params?.username ?? "";
@@ -37,6 +41,14 @@ export default function GameOptionsScreen({ route, navigation }) {
   );
 
   const [showRules, setShowRules] = useState(false);
+  const [showSubscription, setShowSubscription] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const planName = "Plus";
+  const planPrice = "2,99 EUR";
+  const handleRestorePurchases = () => {
+    console.log("Restore purchases tapped");
+  };
+  const { isPlus } = usePlus();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -70,6 +82,8 @@ export default function GameOptionsScreen({ route, navigation }) {
       },
     });
 
+    saveSession(playerName, gamepin);
+
     navigation.navigate("CardTraits", { username: playerName, gamepin });
   };
 
@@ -81,6 +95,10 @@ export default function GameOptionsScreen({ route, navigation }) {
 
     navigation.navigate("JoinGame", { username: playerName });
   };
+
+  useEffect(() => {
+    setShowSubscription(!isPlus);
+  }, [isPlus]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -126,6 +144,22 @@ export default function GameOptionsScreen({ route, navigation }) {
           </View>
         </Modal>
 
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          onOpenPlus={() => {
+            setShowSettings(false);
+            setShowSubscription(true);
+          }}
+        />
+
+        <PlusModal
+          visible={showSubscription}
+          onClose={() => setShowSubscription(false)}
+          planName={planName}
+          planPrice={planPrice}
+        />
+
         <ScrollView
           style={localStyles.scroll}
           contentContainerStyle={[
@@ -136,7 +170,14 @@ export default function GameOptionsScreen({ route, navigation }) {
         >
           <View style={localStyles.content}>
             <View style={localStyles.topBar}>
-              <LanguageToggle />
+              <TouchableOpacity
+                style={localStyles.settingsButton}
+                onPress={() => setShowSettings(true)}
+                activeOpacity={0.8}
+                accessibilityLabel={t("Settings")}
+              >
+                <Ionicons name="settings-outline" size={22} color="#fff" />
+              </TouchableOpacity>
             </View>
               <Image source={logoSource} style={localStyles.logo} />
 
@@ -238,10 +279,10 @@ export default function GameOptionsScreen({ route, navigation }) {
                     <LinearGradient
                       colors={theme.primaryButtonGradient}
                       start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={localStyles.utilityButtonInner}
-                    >
-                      <Ionicons name="book" size={26} color="#ffffff" />
+                    end={{ x: 1, y: 1 }}
+                    style={localStyles.utilityButtonInner}
+                  >
+                      <Ionicons name="help-circle-outline" size={30} color="#ffffff" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -326,6 +367,11 @@ const localStyles = StyleSheet.create({
     width: "100%",
     alignItems: "flex-end",
     marginBottom: 12,
+  },
+  settingsButton: {
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   logo: {
     height: 110,
@@ -558,6 +604,148 @@ const localStyles = StyleSheet.create({
     maxHeight: 520,
     paddingBottom: 8,
   },
+  settingsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  settingsLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.bodyText,
+  },
+  settingsPrimary: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  settingsPrimaryInner: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsPrimaryIcon: {
+    marginRight: 10,
+  },
+  settingsPrimaryText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  offerCard: {
+    width: "90%",
+    maxWidth: 420,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "#1D0F24",
+    position: "relative",
+    shadowColor: "#11022C",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.32,
+    shadowRadius: 30,
+    elevation: 14,
+  },
+  offerHeader: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+  },
+  offerBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  offerBadgeText: {
+    marginLeft: 8,
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+  offerPriceRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginTop: 12,
+  },
+  offerPrice: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: "#fff",
+    marginRight: 8,
+  },
+  offerPriceCaption: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.82)",
+    marginBottom: 6,
+  },
+  offerTagline: {
+    marginTop: 6,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "rgba(255,255,255,0.9)",
+  },
+  offerTaxNote: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+  },
+  offerClose: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  offerBody: {
+    padding: 18,
+    backgroundColor: "#ffffff",
+  },
+  offerListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  offerListText: {
+    marginLeft: 10,
+    fontSize: 15,
+    color: theme.bodyText,
+    fontWeight: "600",
+  },
+  offerButton: {
+    marginTop: 18,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  offerButtonGradient: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  offerButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  offerLater: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  offerLaterText: {
+    color: theme.helperText,
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });
 
 function capitaliseFirstLetter(value) {
@@ -567,5 +755,3 @@ function capitaliseFirstLetter(value) {
 
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
-
-

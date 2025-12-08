@@ -21,6 +21,9 @@ import { database } from "../firebaseConfig";
 import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import theme from "../utils/theme";
+import SettingsModal from "./SettingsModal";
+import PlusModal from "./PlusModal";
+import { saveSession, clearSession } from "../utils/session";
 
 const screenW = Dimensions.get("window").width || 360;
 const DECISION_ANIM_DURATION = 2000;
@@ -74,10 +77,23 @@ export default function GamePlay({ route, navigation }) {
   });
 
   const [showOverlay, setShowOverlay] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlus, setShowPlus] = useState(false);
   const [decisionInProgress, setDecisionInProgress] = useState(false);
   const [decisionCountdown, setDecisionCountdown] = useState(null);
   const [decisionReady, setDecisionReady] = useState(false);
   const [leaveInProgress, setLeaveInProgress] = useState(false);
+  const planName = "Plus";
+  const planPrice = "2,99 EUR";
+  const handleRestorePurchases = useCallback(() => {
+    console.log("Restore purchases tapped");
+  }, []);
+
+  useEffect(() => {
+    if (username && gamepin) {
+      saveSession(username, gamepin);
+    }
+  }, [username, gamepin]);
 
   const cardX = useRef(new Animated.Value(screenW)).current;
   const overlayX = useRef(new Animated.Value(screenW)).current;
@@ -134,6 +150,7 @@ export default function GamePlay({ route, navigation }) {
       return;
     }
     navigatedAwayRef.current = true;
+    clearSession();
     navigation.reset({
       index: 0,
       routes: [
@@ -410,6 +427,9 @@ export default function GamePlay({ route, navigation }) {
   const displayName = currentPlayer?.username || fallbackPlayerLabel;
   const playerInitial = displayName.slice(0, 1).toUpperCase();
   const totalAccepted = acceptedTraits.length;
+  const currentDateLabel = t("Date {{number}}", {
+    number: Math.max(totalAccepted, 0) + 1,
+  });
   const revealProgressLabel = totalAccepted
     ? t("{{shown}}/{{total}} shown", {
         shown: revealedTraits.length,
@@ -1030,7 +1050,6 @@ export default function GamePlay({ route, navigation }) {
           <View style={gp.blobTop} />
           <View style={gp.blobBottom} />
         </View>
-
         <ScrollView
           style={gp.scroll}
           contentContainerStyle={gp.scrollContent}
@@ -1061,26 +1080,15 @@ export default function GamePlay({ route, navigation }) {
                     {currentPlayer?.username || "-"}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={gp.headerSettingsButton}
+                  onPress={() => setShowSettings(true)}
+                  accessibilityLabel={t("Settings")}
+                >
+                  <Ionicons name="settings-outline" size={20} color="#F8ECFF" />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[
-                  gp.leaveButton,
-                  leaveInProgress && gp.leaveButtonDisabled,
-                ]}
-                onPress={confirmLeaveGame}
-                disabled={leaveInProgress}
-              >
-                <Ionicons
-                  name="exit-outline"
-                  size={18}
-                  color="#F8ECFF"
-                  style={gp.leaveButtonIcon}
-                />
-                <Text style={gp.leaveButtonText}>
-                  {leaveInProgress ? t("Leaving...") : t("Leave")}
-                </Text>
-              </TouchableOpacity>
             </View>
             <Text style={gp.headerSubtitle}>
               {isCurrentUserTurn
@@ -1277,6 +1285,14 @@ export default function GamePlay({ route, navigation }) {
               pointerEvents="none"
             />
             <LinearGradient
+              colors={theme.primaryButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={gp.revealDateBadge}
+            >
+              <Text style={gp.revealDateTitle}>{currentDateLabel}</Text>
+            </LinearGradient>
+            <LinearGradient
               colors={theme.cardFrameGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -1363,6 +1379,9 @@ export default function GamePlay({ route, navigation }) {
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
+              <Text style={gp.revealReadAloudText}>
+                {t("Read traits aloud")}
+              </Text>
               {!isCurrentUserTurn && (
                 <Text style={gp.revealWaitingText}>
                   {t("Waiting for {{name}} to continue", { name: displayName })}
@@ -1427,6 +1446,24 @@ export default function GamePlay({ route, navigation }) {
             </LinearGradient>
           </Animated.View>
         )}
+
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          onOpenPlus={() => {
+            setShowSettings(false);
+            setShowPlus(true);
+          }}
+          showLeave
+          onLeave={leaveGame}
+        />
+        <PlusModal
+          visible={showPlus}
+          onClose={() => setShowPlus(false)}
+          planName={planName}
+          planPrice={planPrice}
+          onRestorePurchases={handleRestorePurchases}
+        />
       </SafeAreaView>
     </View>
   );
@@ -1481,12 +1518,16 @@ const gp = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
     marginBottom: 12,
   },
   roundRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     marginBottom: 0,
   },
   roundBadge: {
@@ -1495,7 +1536,7 @@ const gp = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.16)",
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 14,
   },
   roundBadgeIcon: {
     marginRight: 6,
@@ -1512,7 +1553,8 @@ const gp = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.16)",
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
+    borderRadius: 14,
+    marginLeft: 10,
   },
   turnChipIcon: {
     marginRight: 6,
@@ -1521,6 +1563,12 @@ const gp = StyleSheet.create({
     color: "#F8ECFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  headerSettingsButton: {
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    marginLeft: 14,
   },
   leaveButton: {
     flexDirection: "row",
@@ -1766,9 +1814,31 @@ const gp = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(255, 251, 244, 0.65)",
   },
+  revealDateBadge: {
+    alignSelf: "stretch",
+    width: "100%",
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 28,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 0,
+    overflow: "hidden",
+  },
+  revealDateTitle: {
+    color: "#ffffff",
+    fontSize: 26,
+    fontWeight: "800",
+    textAlign: "center",
+  },
   revealCard: {
     width: "100%",
     borderRadius: 28,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderTopWidth: 0,
     paddingVertical: 30,
     paddingHorizontal: 24,
     backgroundColor: theme.neutralSurface,
@@ -1909,6 +1979,12 @@ const gp = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
+  },
+  revealReadAloudText: {
+    marginTop: 8,
+    color: theme.helperText,
+    fontSize: 13,
+    textAlign: "center",
   },
   revealButtonContent: {
     flexDirection: "row",
