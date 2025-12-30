@@ -1,0 +1,110 @@
+Treffipeli — Terms of Service (English)
+Last updated: 2025-12-05
+
+1. Use of the app
+Treffipeli is provided “as is” for personal, non-commercial use. You must follow applicable laws and respect other users. We may update or discontinue features without notice.
+
+2. Accounts and access
+The app may create an anonymous account for gameplay. Do not attempt to access data you are not allowed to see. We may suspend access for misuse.
+
+3. Purchases
+Subscriptions and in-app products are processed via the App Store or Google Play. Billing, refunds, and trials follow the store rules. RevenueCat manages entitlements; access is granted when the store confirms payment.
+
+4. Content and conduct
+You are responsible for any text you submit. Do not post illegal, harmful, or offensive content.
+
+5. Liability
+To the maximum extent permitted by law, the app is provided without warranties and we are not liable for indirect or consequential damages.
+
+6. Governing law
+Finnish law applies unless mandatory local law states otherwise.
+
+----------------------------------------------------------------
+Treffipeli — Käyttöehdot (Suomi)
+Päivitetty: 5.12.2025
+
+1. Sovelluksen käyttö
+Treffipeli tarjotaan sellaisenaan henkilökohtaiseen ja ei-kaupalliseen käyttöön. Noudata lakeja ja kunnioita muita käyttäjiä. Voimme päivittää tai poistaa ominaisuuksia ilman ennakkoilmoitusta.
+
+2. Tunnukset ja käyttöoikeus
+Sovellus voi luoda anonyymin tunnuksen pelaamista varten. Älä yritä käyttää dataa, johon sinulla ei ole lupaa. Voimme estää pääsyn väärinkäytön vuoksi.
+
+3. Ostot
+Tilaukset ja tuotteet veloitetaan App Storen tai Google Playn kautta. Laskutus, palautukset ja kokeilut noudattavat kaupan sääntöjä. RevenueCat hallinnoi käyttöoikeuksia; pääsy avataan, kun kauppa vahvistaa maksun.
+
+4. Sisältö ja käytös
+Olet vastuussa viesteistäsi. Älä julkaise laitonta, haitallista tai loukkaavaa sisältöä.
+
+5. Vastuu
+Sovellus toimitetaan ilman takuita, eikä meitä vastuuteta välillisistä tai seurannaisvahingoista lain sallimissa rajoissa.
+
+6. Sovellettava laki
+Sovellukseen sovelletaan Suomen lakia, ellei pakottava paikallinen laki toisin määrää.
+
+================================================================
+Treffipeli — Privacy Policy (English)
+Last updated: 2025-12-05
+
+1. Data we collect
+- Anonymous account ID for gameplay.
+- Optional username you provide.
+- Purchase and subscription status from the store via RevenueCat.
+- Device identifiers needed for ads/analytics (from store SDKs such as Google Mobile Ads and RevenueCat).
+
+2. How we use data
+- To run the game, restore sessions, and verify purchases.
+- To show ads (if applicable) and measure performance.
+
+3. Sharing
+- RevenueCat receives purchase-related data to manage entitlements.
+- App Store or Google Play handle billing data.
+- Ad/analytics partners (e.g., Google Mobile Ads) may receive device identifiers to serve and measure ads.
+We do not sell personal data.
+
+4. Storage and retention
+Data is stored by our service providers and kept only as needed for the purposes above or legal requirements.
+
+5. Your choices
+- You can delete the app to stop data collection on that device.
+- You may request removal of in-app data where applicable by contacting support.
+- You can limit ad tracking via your device settings.
+
+6. Children
+The app is not directed to children under 13. Do not use if you are under the minimum age in your region.
+
+7. Contact
+Support: info@treffipeli.fi
+
+----------------------------------------------------------------
+Treffipeli — Tietosuojakäytäntö (Suomi)
+Päivitetty: 5.12.2025
+
+1. Kerättävät tiedot
+- Anonyymi tunniste pelaamista varten.
+- Valinnainen käyttäjänimi, jonka annat.
+- Osto- ja tilaustiedot kaupasta RevenueCatin kautta.
+- Laitetunnisteet, joita mainos- ja analytiikkapalvelut (kuten Google Mobile Ads, RevenueCat) tarvitsevat.
+
+2. Tietojen käyttö
+- Pelin toiminta, sessioiden palautus ja ostojen vahvistus.
+- Mainosten näyttäminen (jos käytössä) ja suorituskyvyn mittaus.
+
+3. Tietojen jakaminen
+- RevenueCat saa ostotietoja käyttöoikeuksien hallintaan.
+- App Store tai Google Play käsittelee maksutietoja.
+- Mainos/analytiikkakumppanit (esim. Google Mobile Ads) voivat saada laitetunnisteita mainosten näyttämiseen ja mittaamiseen.
+Emme myy henkilötietoja.
+
+4. Säilytys
+Tiedot säilytetään palveluntarjoajien järjestelmissä niin kauan kuin se on tarpeen edellä kuvattuihin tarkoituksiin tai lain vaatimuksiin.
+
+5. Valinnat
+- Voit poistaa sovelluksen lopettaaksesi tiedon keruun laitteella.
+- Voit pyytää sovelluksen sisäisten tietojen poistamista ottamalla yhteyttä tukeen.
+- Voit rajoittaa mainosseurantaa laitteen asetuksista.
+
+6. Lapset
+Sovellus ei ole suunnattu alle 13-vuotiaille. Älä käytä sovellusta, jos olet alle alueesi ikärajan.
+
+7. Yhteys
+Tuki: info@treffipeli.fi

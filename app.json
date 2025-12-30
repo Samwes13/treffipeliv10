@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Treffipeli",
-    "slug": "Treffipeli",
+    "slug": "treffipelimobile",
     "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/app-icon.png",
