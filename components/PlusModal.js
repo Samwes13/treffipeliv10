@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,10 +6,13 @@ import {
   Modal,
   StyleSheet,
   Linking,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useLanguage } from "../contexts/LanguageContext";
+import { usePlus } from "../contexts/PlusContext";
 import theme from "../utils/theme";
 import Purchases from "react-native-purchases";
 
@@ -23,18 +26,13 @@ export default function PlusModal({
   onRestorePurchases,
 }) {
   const { t, language } = useLanguage();
-  const [displayPrice, setDisplayPrice] = useState(planPrice);
-  const [displayCaption, setDisplayCaption] = useState(
-    language === "fi" ? t("per month") : t("per month"),
-  );
+  const { refreshPlusStatus, restorePurchases } = usePlus();
+  const [displayPrice, setDisplayPrice] = useState("");
+  const [displayCaption, setDisplayCaption] = useState("");
   const [loadingPrice, setLoadingPrice] = useState(false);
-  const handleRestore = () => {
-    if (onRestorePurchases) {
-      onRestorePurchases();
-    } else {
-      console.log("Restore purchases tapped (no handler provided)");
-    }
-  };
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [purchaseInProgress, setPurchaseInProgress] = useState(false);
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
 
   const openLink = async (url) => {
     try {
@@ -44,6 +42,144 @@ export default function PlusModal({
       }
     } catch (error) {
       console.warn("Failed to open link", error?.message || error);
+    }
+  };
+
+  const purchaseDisabled = purchaseInProgress || loadingPrice || !selectedPackage;
+
+  const getHasPlus = (info) => {
+    const activeEntitlements = info?.entitlements?.active || {};
+    const entitlementKeys = Object.keys(activeEntitlements);
+    if (
+      !!activeEntitlements.plus ||
+      !!activeEntitlements.Plus ||
+      !!activeEntitlements.Premium ||
+      entitlementKeys.length > 0
+    ) {
+      return true;
+    }
+    const activeSubscriptions = info?.activeSubscriptions || [];
+    return Array.isArray(activeSubscriptions) && activeSubscriptions.length > 0;
+  };
+
+  const applyCustomerInfo = async (info) => {
+    if (info) {
+      await refreshPlusStatus(info);
+      return info;
+    }
+    try {
+      const latestInfo = await Purchases.getCustomerInfo();
+      await refreshPlusStatus(latestInfo);
+      return latestInfo;
+    } catch (infoError) {
+      console.warn("Failed to refresh customer info", infoError?.message || infoError);
+      return null;
+    }
+  };
+
+  const handleRestore = async () => {
+    if (restoreInProgress) {
+      return;
+    }
+    setRestoreInProgress(true);
+    try {
+      let restoreInfo = null;
+      if (onRestorePurchases) {
+        restoreInfo = await onRestorePurchases();
+      } else {
+        restoreInfo = await restorePurchases();
+      }
+      let latestInfo = await applyCustomerInfo(restoreInfo);
+      if (!getHasPlus(latestInfo)) {
+        try {
+          const syncInfo = await Purchases.syncPurchases();
+          latestInfo = await applyCustomerInfo(syncInfo);
+        } catch (syncError) {
+          console.warn("Failed to sync purchases", syncError?.message || syncError);
+        }
+      }
+      const hasPlus = getHasPlus(latestInfo);
+      Alert.alert(
+        t("Notice"),
+        hasPlus ? t("Plus activated") : t("No active subscription found"),
+      );
+      if (hasPlus) {
+        onClose && onClose();
+      }
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+      Alert.alert(
+        t("Notice"),
+        t("Something went wrong. Please try again shortly."),
+      );
+    } finally {
+      setRestoreInProgress(false);
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (purchaseDisabled) {
+      return;
+    }
+    if (!selectedPackage) {
+      Alert.alert(
+        t("Notice"),
+        t("Something went wrong. Please try again shortly."),
+      );
+      return;
+    }
+    try {
+      setPurchaseInProgress(true);
+      const result = await Purchases.purchasePackage(selectedPackage);
+      const info = result?.customerInfo || result;
+      await applyCustomerInfo(info);
+      try {
+        await Purchases.syncPurchases();
+      } catch (syncError) {
+        console.warn("Failed to sync purchases", syncError?.message || syncError);
+      }
+      const latestInfo = await applyCustomerInfo();
+      if (latestInfo) {
+        console.log("customerInfo after purchase", JSON.stringify(latestInfo, null, 2));
+      }
+      onClose && onClose();
+    } catch (error) {
+      const errorCode = error?.code;
+      const readableCode =
+        error?.userInfo?.readableErrorCode || error?.readableErrorCode;
+      const isAlreadyPurchased =
+        errorCode === Purchases.PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR ||
+        readableCode === "PRODUCT_ALREADY_PURCHASED_ERROR";
+      if (isAlreadyPurchased) {
+        try {
+          const syncInfo = await Purchases.syncPurchases();
+          const latestInfo = await applyCustomerInfo(syncInfo);
+          const hasPlus = getHasPlus(latestInfo);
+          Alert.alert(
+            t("Notice"),
+            hasPlus ? t("Plus activated") : t("No active subscription found"),
+          );
+          if (hasPlus) {
+            onClose && onClose();
+          }
+        } catch (syncError) {
+          console.warn("Failed to sync purchases", syncError?.message || syncError);
+          Alert.alert(
+            t("Notice"),
+            t("Something went wrong. Please try again shortly."),
+          );
+        }
+        return;
+      }
+      if (!error?.userCancelled) {
+        console.warn("Purchase failed", error?.message || error);
+        Alert.alert(
+          t("Notice"),
+          t("Something went wrong. Please try again shortly."),
+        );
+      }
+    } finally {
+      setPurchaseInProgress(false);
     }
   };
 
@@ -63,6 +199,11 @@ export default function PlusModal({
       }
       try {
         setLoadingPrice(true);
+        if (mounted) {
+          setDisplayPrice("");
+          setDisplayCaption("");
+          setSelectedPackage(null);
+        }
         const offerings = await Purchases.getOfferings();
         const current = offerings?.current;
         const pkg =
@@ -74,18 +215,15 @@ export default function PlusModal({
         const priceString = pkg?.product?.priceString;
         const caption = packageLabel(pkg?.packageType);
         if (priceString && mounted) {
-          setDisplayPrice(
-            priceString,
-          );
+          setSelectedPackage(pkg || null);
+          setDisplayPrice(priceString);
           setDisplayCaption(caption);
-        } else if (mounted) {
-          setDisplayPrice(planPrice);
-          setDisplayCaption(language === "fi" ? t("per month") : t("per month"));
         }
       } catch (error) {
         if (mounted) {
-          setDisplayPrice(planPrice);
-          setDisplayCaption(language === "fi" ? t("per month") : t("per month"));
+          setDisplayPrice("");
+          setDisplayCaption("");
+          setSelectedPackage(null);
         }
       } finally {
         mounted && setLoadingPrice(false);
@@ -122,9 +260,11 @@ export default function PlusModal({
               <Text style={styles.offerPrice}>
                 {loadingPrice
                   ? t("Loading…")
-                  : displayPrice || planPrice}
+                  : displayPrice || t("Price unavailable")}
               </Text>
-              <Text style={styles.offerPriceCaption}>{displayCaption}</Text>
+              {displayPrice ? (
+                <Text style={styles.offerPriceCaption}>{displayCaption}</Text>
+              ) : null}
             </View>
             <TouchableOpacity style={styles.offerClose} onPress={onClose}>
               <Ionicons name="close" size={22} color="#ffffff" />
@@ -160,9 +300,13 @@ export default function PlusModal({
             </View>
 
             <TouchableOpacity
-              style={styles.offerButton}
+              style={[
+                styles.offerButton,
+                purchaseDisabled && styles.offerButtonDisabled,
+              ]}
               activeOpacity={0.9}
-              onPress={onClose}
+              onPress={handlePurchase}
+              disabled={purchaseDisabled}
             >
               <LinearGradient
                 colors={theme.primaryButtonGradient}
@@ -170,8 +314,14 @@ export default function PlusModal({
                 end={{ x: 1, y: 1 }}
                 style={styles.offerButtonGradient}
               >
-                <Text style={styles.offerButtonText}>{`Start ${planName}`}</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Text style={styles.offerButtonText}>
+                  {purchaseInProgress ? t("Starting...") : `Start ${planName}`}
+                </Text>
+                {purchaseInProgress ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                )}
               </LinearGradient>
             </TouchableOpacity>
 
@@ -223,6 +373,7 @@ export default function PlusModal({
                 style={styles.restoreButton}
                 onPress={handleRestore}
                 activeOpacity={0.85}
+                disabled={restoreInProgress}
               >
                 <Ionicons
                   name="refresh-circle"
@@ -231,6 +382,13 @@ export default function PlusModal({
                   style={styles.restoreIcon}
                 />
                 <Text style={styles.restoreText}>{t("Restore purchases")}</Text>
+                {restoreInProgress && (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.bodyText}
+                    style={styles.restoreSpinner}
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -334,6 +492,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
   },
+  offerButtonDisabled: {
+    opacity: 0.7,
+  },
   offerButtonGradient: {
     paddingVertical: 14,
     paddingHorizontal: 16,
@@ -374,6 +535,9 @@ const styles = StyleSheet.create({
     color: theme.bodyText,
     fontSize: 14,
     fontWeight: "700",
+  },
+  restoreSpinner: {
+    marginLeft: 8,
   },
   divider: {
     marginTop: 14,

@@ -53,13 +53,30 @@ export default function App() {
   useEffect(() => {
     try {
       Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
-      const iosApiKey = "test_rOjhwkjMntqOlzZkayPdJHObzOY";
-      const androidApiKey = "test_rOjhwkjMntqOlzZkayPdJHObzOY";
+      const iosApiKey = "appl_qvjzVHPRdqnOpAlfATEiAzoTdlW";
+      const androidApiKey = "goog_pFogBVqSAuyaDTWcKqTsycZTVMP";
       if (Platform.OS === "ios") {
         Purchases.configure({ apiKey: iosApiKey });
       } else if (Platform.OS === "android") {
         Purchases.configure({ apiKey: androidApiKey });
       }
+
+      const getCustomerInfo = async () => {
+        try {
+          const customerInfo = await Purchases.getCustomerInfo();
+          console.log(
+            "customerInfo",
+            JSON.stringify(customerInfo, null, 2),
+          );
+        } catch (infoError) {
+          console.warn(
+            "Failed to fetch customer info:",
+            infoError?.message || infoError,
+          );
+        }
+      };
+
+      getCustomerInfo();
     } catch (error) {
       console.warn("RevenueCat configure failed:", error?.message || error);
     }

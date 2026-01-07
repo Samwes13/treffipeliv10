@@ -21,6 +21,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
 import { saveSession } from "../utils/session";
+import { usePlus } from "../contexts/PlusContext";
 
 const PIN_LENGTH = 6;
 
@@ -28,6 +29,7 @@ export default function JoinGame({ navigation, route }) {
   const rawUsername = route.params?.username ?? "";
   const username = rawUsername.trim() || rawUsername;
   const { t, language } = useLanguage();
+  const { isPlus } = usePlus();
   const logoSource = getLogoSource(language);
 
   const [pincode, setPincode] = useState("");
@@ -142,6 +144,7 @@ export default function JoinGame({ navigation, route }) {
         usernameKey,
         traits: [],
         isHost: false,
+        isPlus: !!isPlus,
       });
 
       await saveSession(username, formattedPin);

@@ -1,6 +1,7 @@
 import React from "react";
 import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
 import { useLanguage, LANGUAGE_OPTIONS } from "../contexts/LanguageContext";
+import theme from "../utils/theme";
 
 export default function LanguageToggle({ style }) {
   const { language, setLanguage } = useLanguage();
@@ -37,9 +38,9 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     borderRadius: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    backgroundColor: theme.modalAccentBackground,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderColor: "rgba(255, 102, 196, 0.25)",
     overflow: "hidden",
   },
   button: {
@@ -60,7 +61,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#F0E9FF",
+    color: theme.bodyText,
   },
   labelActive: {
     color: "#5B2CCF",

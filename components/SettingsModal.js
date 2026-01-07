@@ -18,8 +18,12 @@ export default function SettingsModal({
   onOpenPlus,
   showLeave = false,
   onLeave,
+  isPlus = false,
 }) {
   const { t } = useLanguage();
+  const isPlusMember = Boolean(isPlus);
+  const plusLabel = isPlusMember ? t("Plus member") : t("Open Plus");
+  const plusIcon = isPlusMember ? "checkmark-circle" : "sparkles-outline";
 
   return (
     <Modal
@@ -60,8 +64,12 @@ export default function SettingsModal({
 
             <TouchableOpacity
               activeOpacity={0.9}
-              style={styles.settingsPrimary}
-              onPress={onOpenPlus}
+              style={[
+                styles.settingsPrimary,
+                isPlusMember && styles.settingsPrimaryDisabled,
+              ]}
+              onPress={isPlusMember ? undefined : onOpenPlus}
+              disabled={isPlusMember}
             >
               <LinearGradient
                 colors={theme.primaryButtonGradient}
@@ -70,12 +78,12 @@ export default function SettingsModal({
                 style={styles.settingsPrimaryInner}
               >
                 <Ionicons
-                  name="sparkles-outline"
+                  name={plusIcon}
                   size={18}
                   color="#ffffff"
                   style={styles.settingsPrimaryIcon}
                 />
-                <Text style={styles.settingsPrimaryText}>{t("Open Plus")}</Text>
+                <Text style={styles.settingsPrimaryText}>{plusLabel}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -143,6 +151,9 @@ const styles = StyleSheet.create({
   settingsPrimary: {
     borderRadius: 14,
     overflow: "hidden",
+  },
+  settingsPrimaryDisabled: {
+    opacity: 0.65,
   },
   settingsPrimaryInner: {
     paddingVertical: 12,

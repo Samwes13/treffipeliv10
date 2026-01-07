@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import styles from "../styles";
-import { ref, push, remove, update } from "firebase/database";
-import { database } from "../firebaseConfig";
+import { ref, push, update } from "firebase/database";
+import { auth, database } from "../firebaseConfig";
 import { LinearGradient } from "expo-linear-gradient";
 import ModalAlert from "./ModalAlert";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,6 +23,7 @@ import theme from "../utils/theme";
 import getLogoSource from "../utils/logo";
 import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
+import { usePlus } from "../contexts/PlusContext";
 
 const USERNAME_SUGGESTIONS = [
   "AuroraSoul",
@@ -44,6 +45,7 @@ const getRandomSuggestion = () => {
 
 export default function EnterUsername({ navigation }) {
   const { t, language } = useLanguage();
+  const { isPlus, restorePurchases } = usePlus();
   const logoSource = getLogoSource(language);
   const [username, setUsername] = useState("");
   const [alertState, setAlertState] = useState({
@@ -56,8 +58,12 @@ export default function EnterUsername({ navigation }) {
   const [showPlus, setShowPlus] = useState(false);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
-  const handleRestorePurchases = () => {
-    console.log("Restore purchases tapped");
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+    }
   };
 
   const usernameLength = username.trim().length;
@@ -69,25 +75,20 @@ export default function EnterUsername({ navigation }) {
   };
 
   const saveUsername = (user) => {
-    const ttlMs = 2 * 60 * 60 * 1000;
+    const userId = auth?.currentUser?.uid;
     const usersRef = ref(database, "users/");
-    const newUserRef = push(usersRef);
+    const userRef = userId ? ref(database, `users/${userId}`) : push(usersRef);
     const playerData = {
-      playerId: newUserRef.key,
+      playerId: userId || userRef.key,
       username: user,
       timestamp: Date.now(),
       ishost: false,
       gamepin: null,
     };
 
-    update(newUserRef, playerData)
-      .then(() => console.log(`User ${user} saved with ID ${newUserRef.key}`))
+    update(userRef, playerData)
+      .then(() => console.log(`User ${user} saved with ID ${playerData.playerId}`))
       .catch((error) => console.error("Error saving username:", error));
-    setTimeout(() => {
-      remove(newUserRef)
-        .then(() => console.log(`Username ${user} removed after 2 hours`))
-        .catch((error) => console.error("Error removing username:", error));
-    }, ttlMs);
   };
 
   const handleSubmit = () => {
@@ -136,6 +137,16 @@ export default function EnterUsername({ navigation }) {
           >
             <View style={localStyles.scrollInner}>
               <View style={localStyles.headerRow}>
+                <View style={localStyles.headerLeft}>
+                  {isPlus && (
+                    <View style={localStyles.plusBadge}>
+                      <Ionicons name="sparkles" size={16} color="#FFE5FF" />
+                      <Text style={localStyles.plusBadgeText}>
+                        {t("Plus")}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <TouchableOpacity
                   style={localStyles.settingsButton}
                   onPress={() => setShowSettings(true)}
@@ -264,17 +275,23 @@ export default function EnterUsername({ navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenPlus={() => {
+            if (isPlus) {
+              return;
+            }
             setShowSettings(false);
             setShowPlus(true);
           }}
+          isPlus={isPlus}
         />
-        <PlusModal
-          visible={showPlus}
-          onClose={() => setShowPlus(false)}
-          planName={planName}
-          planPrice={planPrice}
-          onRestorePurchases={handleRestorePurchases}
-        />
+        {!isPlus && (
+          <PlusModal
+            visible={showPlus}
+            onClose={() => setShowPlus(false)}
+            planName={planName}
+            planPrice={planPrice}
+            onRestorePurchases={handleRestorePurchases}
+          />
+        )}
       </SafeAreaView>
 
       <ModalAlert
@@ -294,12 +311,35 @@ const localStyles = StyleSheet.create({
   },
   headerRow: {
     width: "100%",
-    alignItems: "flex-end",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
+  },
+  headerLeft: {
+    minWidth: 90,
   },
   settingsButton: {
     padding: 2,
     borderRadius: 18,
+  },
+  plusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.45)",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  plusBadgeText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "#ffffff",
   },
   settingsButtonGradient: {
     flexDirection: "row",

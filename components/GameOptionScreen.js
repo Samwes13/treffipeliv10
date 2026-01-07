@@ -45,10 +45,14 @@ export default function GameOptionsScreen({ route, navigation }) {
   const [showSettings, setShowSettings] = useState(false);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
-  const handleRestorePurchases = () => {
-    console.log("Restore purchases tapped");
+  const { isPlus, restorePurchases } = usePlus();
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+    }
   };
-  const { isPlus } = usePlus();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -78,6 +82,7 @@ export default function GameOptionsScreen({ route, navigation }) {
           usernameKey,
           traits: [],
           isHost: true,
+          isPlus: !!isPlus,
         },
       },
     });
@@ -148,17 +153,24 @@ export default function GameOptionsScreen({ route, navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenPlus={() => {
+            if (isPlus) {
+              return;
+            }
             setShowSettings(false);
             setShowSubscription(true);
           }}
+          isPlus={isPlus}
         />
 
-        <PlusModal
-          visible={showSubscription}
-          onClose={() => setShowSubscription(false)}
-          planName={planName}
-          planPrice={planPrice}
-        />
+        {!isPlus && (
+          <PlusModal
+            visible={showSubscription}
+            onClose={() => setShowSubscription(false)}
+            planName={planName}
+            planPrice={planPrice}
+            onRestorePurchases={handleRestorePurchases}
+          />
+        )}
 
         <ScrollView
           style={localStyles.scroll}
@@ -170,6 +182,16 @@ export default function GameOptionsScreen({ route, navigation }) {
         >
           <View style={localStyles.content}>
             <View style={localStyles.topBar}>
+              <View style={localStyles.topBarLeft}>
+                {isPlus && (
+                  <View style={localStyles.plusBadge}>
+                    <Ionicons name="sparkles" size={16} color="#FFE5FF" />
+                    <Text style={localStyles.plusBadgeText}>
+                      {t("Plus")}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <TouchableOpacity
                 style={localStyles.settingsButton}
                 onPress={() => setShowSettings(true)}
@@ -365,13 +387,36 @@ const localStyles = StyleSheet.create({
   },
   topBar: {
     width: "100%",
-    alignItems: "flex-end",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
+  },
+  topBarLeft: {
+    minWidth: 90,
   },
   settingsButton: {
     padding: 10,
     borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  plusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.45)",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  plusBadgeText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: "#ffffff",
   },
   logo: {
     height: 110,

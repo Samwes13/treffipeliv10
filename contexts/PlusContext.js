@@ -4,22 +4,44 @@ import Purchases from "react-native-purchases";
 const PlusContext = createContext({
   isPlus: false,
   refreshPlusStatus: async () => {},
+  restorePurchases: async () => {},
 });
 
 export function PlusProvider({ children }) {
   const [isPlus, setIsPlus] = useState(false);
 
-  const refreshPlusStatus = async () => {
+  const getHasPlus = (info) => {
+    const activeEntitlements = info?.entitlements?.active || {};
+    const entitlementKeys = Object.keys(activeEntitlements);
+    if (
+      !!activeEntitlements.plus ||
+      !!activeEntitlements.Plus ||
+      !!activeEntitlements.Premium ||
+      entitlementKeys.length > 0
+    ) {
+      return true;
+    }
+    const activeSubscriptions = info?.activeSubscriptions || [];
+    return Array.isArray(activeSubscriptions) && activeSubscriptions.length > 0;
+  };
+
+  const refreshPlusStatus = async (customerInfo) => {
     try {
-      const info = await Purchases.getCustomerInfo();
-      const activeEntitlements = info?.entitlements?.active || {};
-      const hasPlus =
-        !!activeEntitlements.plus ||
-        !!activeEntitlements.Plus ||
-        !!activeEntitlements.Premium;
-      setIsPlus(hasPlus);
+      const info = customerInfo || (await Purchases.getCustomerInfo());
+      setIsPlus(getHasPlus(info));
     } catch (error) {
       console.warn("Failed to fetch entitlements", error?.message || error);
+    }
+  };
+
+  const restorePurchases = async () => {
+    try {
+      const info = await Purchases.restorePurchases();
+      setIsPlus(getHasPlus(info));
+      return info;
+    } catch (error) {
+      console.warn("Failed to restore purchases", error?.message || error);
+      throw error;
     }
   };
 
@@ -27,8 +49,20 @@ export function PlusProvider({ children }) {
     refreshPlusStatus();
   }, []);
 
+  useEffect(() => {
+    const listener = (info) => {
+      setIsPlus(getHasPlus(info));
+    };
+    Purchases.addCustomerInfoUpdateListener(listener);
+    return () => {
+      Purchases.removeCustomerInfoUpdateListener(listener);
+    };
+  }, []);
+
   return (
-    <PlusContext.Provider value={{ isPlus, refreshPlusStatus }}>
+    <PlusContext.Provider
+      value={{ isPlus, refreshPlusStatus, restorePurchases }}
+    >
       {children}
     </PlusContext.Provider>
   );

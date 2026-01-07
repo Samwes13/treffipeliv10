@@ -19,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { database } from "../firebaseConfig";
 import { useLanguage } from "../contexts/LanguageContext";
+import { usePlus } from "../contexts/PlusContext";
 import { toUserKey } from "../utils/userKey";
 import theme from "../utils/theme";
 import SettingsModal from "./SettingsModal";
@@ -28,6 +29,7 @@ import { saveSession, clearSession } from "../utils/session";
 const screenW = Dimensions.get("window").width || 360;
 const DECISION_ANIM_DURATION = 2000;
 const NEXT_ANIM_DURATION = 2000;
+const MAX_ROUNDS = 6;
 const androidBlurProps =
   Platform.OS === "android"
     ? {
@@ -38,6 +40,7 @@ const androidBlurProps =
 export default function GamePlay({ route, navigation }) {
   const { gamepin, username } = route.params;
   const { t } = useLanguage();
+  const { restorePurchases, isPlus } = usePlus();
   const usernameKey = useMemo(() => toUserKey(username), [username]);
 
   if (!username) {
@@ -74,6 +77,7 @@ export default function GamePlay({ route, navigation }) {
     bgColor: "rgba(0,0,0,0.8)",
     title: "",
     subtitle: "",
+    reason: null,
   });
 
   const [showOverlay, setShowOverlay] = useState(false);
@@ -85,9 +89,13 @@ export default function GamePlay({ route, navigation }) {
   const [leaveInProgress, setLeaveInProgress] = useState(false);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
-  const handleRestorePurchases = useCallback(() => {
-    console.log("Restore purchases tapped");
-  }, []);
+  const handleRestorePurchases = useCallback(async () => {
+    try {
+      await restorePurchases();
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+    }
+  }, [restorePurchases]);
 
   useEffect(() => {
     if (username && gamepin) {
@@ -103,6 +111,7 @@ export default function GamePlay({ route, navigation }) {
   const animationClearTimerRef = useRef(null);
   const nextPhaseTimeoutRef = useRef(null);
   const revealInitSignatureRef = useRef("");
+  const revealSeenSignatureRef = useRef("");
   const overlaySeenTsRef = useRef(0);
   const navigatedAwayRef = useRef(false);
 
@@ -271,7 +280,7 @@ export default function GamePlay({ route, navigation }) {
         traitReveal: gameData.traitReveal || null,
       }));
 
-      const finalRoundReached = (gameData.currentRound || 0) > 6;
+      const finalRoundReached = (gameData.currentRound || 0) > MAX_ROUNDS;
       if (finalRoundReached) {
         navigateToGameEnd();
         unsubscribe();
@@ -309,6 +318,7 @@ export default function GamePlay({ route, navigation }) {
               bgColor: yes ? "#22c55e" : "#ef4444",
               title: yes ? t("To be continued") : t("Break up"),
               subtitle: "",
+              reason: anim.reason || null,
             });
           } else if (anim.phase === "next") {
             queueAnimationClear(
@@ -324,6 +334,7 @@ export default function GamePlay({ route, navigation }) {
               subtitle: t("Date {{number}}", {
                 number: anim.nextDateNumber || "-",
               }),
+              reason: anim.reason || null,
             });
           }
 
@@ -417,6 +428,25 @@ export default function GamePlay({ route, navigation }) {
   const revealNextCount = revealVisible
     ? Math.max(acceptedTraits.length - revealShownCount, 0)
     : 0;
+  const revealSignature = currentTraitId
+    ? `${currentTraitId}:${acceptedTraits.length}`
+    : "";
+  const finalRoundReached = (gameState.currentRound || 0) > MAX_ROUNDS;
+  const isLastRound = (gameState.currentRound || 0) >= MAX_ROUNDS;
+  const leftLastRound = overlay.reason === "player_left" && isLastRound;
+  const revealExpected =
+    !finalRoundReached &&
+    !leftLastRound &&
+    currentTraitId &&
+    acceptedTraits.length > 0;
+  const revealPending =
+    revealExpected &&
+    !revealVisible &&
+    !overlay.visible &&
+    !showOverlay &&
+    revealSeenSignatureRef.current !== revealSignature;
+  const backgroundBlurActive =
+    showOverlay || overlay.visible || revealPending;
 
   const decisionButtonsDisabled = decisionInProgress || !decisionReady;
   const decisionCountdownLabel =
@@ -648,6 +678,16 @@ export default function GamePlay({ route, navigation }) {
             ? nextPlayer.acceptedTraits.length
             : 0;
           nextDateNumber = nextAcceptedLength + 1;
+          const nextTraitId = traitUpdates.currentTrait?.traitId ?? null;
+          if (nextTraitId && nextAcceptedLength > 0) {
+            updates.traitReveal = {
+              traitId: nextTraitId,
+              player: nextPlayer?.username || "",
+              shownCount: 1,
+              total: nextAcceptedLength,
+              startedAt: Date.now(),
+            };
+          }
         }
       }
 
@@ -856,6 +896,12 @@ export default function GamePlay({ route, navigation }) {
   ]);
 
   useEffect(() => {
+    if (revealVisible && revealSignature) {
+      revealSeenSignatureRef.current = revealSignature;
+    }
+  }, [revealSignature, revealVisible]);
+
+  useEffect(() => {
     if (!isCurrentUserTurn || decisionInProgress) {
       clearDecisionCountdown();
       setDecisionReady(true);
@@ -863,6 +909,12 @@ export default function GamePlay({ route, navigation }) {
     }
 
     if (!currentTraitId) {
+      clearDecisionCountdown();
+      setDecisionReady(false);
+      return;
+    }
+
+    if (showOverlay || overlay.visible) {
       clearDecisionCountdown();
       setDecisionReady(false);
       return;
@@ -898,7 +950,9 @@ export default function GamePlay({ route, navigation }) {
     currentTraitId,
     decisionInProgress,
     isCurrentUserTurn,
+    overlay.visible,
     revealVisible,
+    showOverlay,
   ]);
 
   useEffect(() => {
@@ -1009,6 +1063,16 @@ export default function GamePlay({ route, navigation }) {
         currentRound: nextRound,
         ...traitUpdates,
       };
+      const nextTraitId = traitUpdates.currentTrait?.traitId ?? null;
+      if (nextTraitId && nextAcceptedLength > 0) {
+        updates.traitReveal = {
+          traitId: nextTraitId,
+          player: nextPlayer?.username || "",
+          shownCount: 1,
+          total: nextAcceptedLength,
+          startedAt: Date.now(),
+        };
+      }
 
       cardX.setValue(screenW);
       try {
@@ -1275,10 +1339,20 @@ export default function GamePlay({ route, navigation }) {
           </LinearGradient>
         </ScrollView>
 
+        {backgroundBlurActive && (
+          <BlurView
+            intensity={70}
+            tint="dark"
+            {...androidBlurProps}
+            style={gp.backdropBlur}
+            pointerEvents="none"
+          />
+        )}
+
         {revealVisible && (
           <View style={gp.revealOverlayWrap}>
             <BlurView
-              intensity={80}
+              intensity={70}
               tint="dark"
               {...androidBlurProps}
               style={gp.revealBlur}
@@ -1379,9 +1453,19 @@ export default function GamePlay({ route, navigation }) {
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
-              <Text style={gp.revealReadAloudText}>
-                {t("Read traits aloud")}
-              </Text>
+              {isCurrentUserTurn && (
+                <View style={gp.revealCallout}>
+                  <Ionicons
+                    name="megaphone-outline"
+                    size={18}
+                    color={theme.accentPrimary}
+                    style={gp.revealCalloutIcon}
+                  />
+                  <Text style={gp.revealCalloutText}>
+                    {t("Read traits aloud")}
+                  </Text>
+                </View>
+              )}
               {!isCurrentUserTurn && (
                 <Text style={gp.revealWaitingText}>
                   {t("Waiting for {{name}} to continue", { name: displayName })}
@@ -1400,13 +1484,6 @@ export default function GamePlay({ route, navigation }) {
               },
             ]}
           >
-            <BlurView
-              intensity={70}
-              tint="dark"
-              {...androidBlurProps}
-              style={gp.overlayBlur}
-              pointerEvents="none"
-            />
             <LinearGradient
               colors={overlayGradient}
               start={{ x: 0, y: 0 }}
@@ -1451,19 +1528,25 @@ export default function GamePlay({ route, navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenPlus={() => {
+            if (isPlus) {
+              return;
+            }
             setShowSettings(false);
             setShowPlus(true);
           }}
           showLeave
           onLeave={leaveGame}
+          isPlus={isPlus}
         />
-        <PlusModal
-          visible={showPlus}
-          onClose={() => setShowPlus(false)}
-          planName={planName}
-          planPrice={planPrice}
-          onRestorePurchases={handleRestorePurchases}
-        />
+        {!isPlus && (
+          <PlusModal
+            visible={showPlus}
+            onClose={() => setShowPlus(false)}
+            planName={planName}
+            planPrice={planPrice}
+            onRestorePurchases={handleRestorePurchases}
+          />
+        )}
       </SafeAreaView>
     </View>
   );
@@ -1812,7 +1895,12 @@ const gp = StyleSheet.create({
   },
   revealBlur: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 251, 244, 0.65)",
+    backgroundColor: "rgba(255, 245, 238, 0.5)",
+  },
+  backdropBlur: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 18,
+    backgroundColor: "rgba(255, 245, 238, 0.5)",
   },
   revealDateBadge: {
     alignSelf: "stretch",
@@ -1980,11 +2068,26 @@ const gp = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  revealReadAloudText: {
-    marginTop: 8,
-    color: theme.helperText,
-    fontSize: 13,
-    textAlign: "center",
+  revealCallout: {
+    marginTop: 12,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 222, 89, 0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.35)",
+  },
+  revealCalloutIcon: {
+    marginRight: 8,
+  },
+  revealCalloutText: {
+    color: theme.metaLabel,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   revealButtonContent: {
     flexDirection: "row",
@@ -2008,10 +2111,6 @@ const gp = StyleSheet.create({
     zIndex: 20,
     alignItems: "center",
     justifyContent: "center",
-  },
-  overlayBlur: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 245, 238, 0.5)",
   },
   overlayCard: {
     width: "86%",

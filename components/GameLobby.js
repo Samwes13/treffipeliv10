@@ -31,6 +31,7 @@ import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
 import { saveSession, clearSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
+import * as Clipboard from "expo-clipboard";
 
 const INITIAL_ANIMATION_DURATION_MS = 4000;
 const GAME_START_COUNTDOWN_MS = 4000;
@@ -51,17 +52,23 @@ export default function GameLobby({ route, navigation }) {
   const [countdownActive, setCountdownActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const hasNavigatedRef = useRef(false);
   const insets = useSafeAreaInsets();
   const { t, language } = useLanguage();
-  const { isPlus } = usePlus();
+  const { isPlus, restorePurchases } = usePlus();
   const logoSource = getLogoSource(language);
   const goLabel = t("GO!");
   const usernameKey = useMemo(() => toUserKey(username), [username]);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
-  const handleRestorePurchases = () => {
-    console.log("Restore purchases tapped");
+  const copyTimeoutRef = useRef(null);
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+    }
   };
 
   const leaveLobby = async () => {
@@ -84,6 +91,44 @@ export default function GameLobby({ route, navigation }) {
       setLeaveInProgress(false);
     }
   };
+
+  const handleCopyGameCode = async () => {
+    if (!gamepin) {
+      return;
+    }
+    try {
+      await Clipboard.setStringAsync(gamepin);
+      setCodeCopied(true);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCodeCopied(false);
+      }, 1600);
+    } catch (error) {
+      console.error("Failed to copy game code:", error);
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!gamepin || !usernameKey) {
+      return;
+    }
+    update(ref(database, `games/${gamepin}/players/${usernameKey}`), {
+      isPlus: !!isPlus,
+    }).catch((error) => {
+      console.warn("Failed to update plus status", error?.message || error);
+    });
+  }, [gamepin, usernameKey, isPlus]);
 
   useEffect(() => {
     const gameRef = ref(database, `games/${gamepin}`);
@@ -439,14 +484,40 @@ export default function GameLobby({ route, navigation }) {
         <View style={localStyles.summaryCard}>
           <View style={localStyles.summaryHeader}>
             <View style={localStyles.pinBadge}>
-              <Ionicons name="pricetag-outline" size={16} color="#FFE5FF" />
-              <Text style={localStyles.pinBadgeText}>{gamepin}</Text>
+              <TouchableOpacity
+                style={localStyles.pinBadgeIconWrap}
+                onPress={handleCopyGameCode}
+                disabled={!gamepin}
+                accessibilityRole="button"
+                accessibilityLabel={t("Game Code {{code}}", {
+                  code: gamepin || t("unknown"),
+                })}
+              >
+                <Ionicons
+                  name={codeCopied ? "checkmark-circle" : "copy-outline"}
+                  size={18}
+                  color={codeCopied ? "#16a34a" : "#ff66c4"}
+                />
+              </TouchableOpacity>
+              <View style={localStyles.pinBadgeTextWrap}>
+                <Text style={localStyles.pinBadgeLabel}>
+                  {t("Game Code")}
+                </Text>
+                <Text style={localStyles.pinBadgeText}>{gamepin}</Text>
+              </View>
             </View>
             <View style={localStyles.summaryTag}>
-              <Ionicons name="people-outline" size={16} color="#c2724e" />
-              <Text style={localStyles.summaryTagText}>
-                {t("{{count}} players", { count: players.length })}
-              </Text>
+              <View style={localStyles.summaryTagIconWrap}>
+                <Ionicons name="people-outline" size={18} color="#c2724e" />
+              </View>
+              <View style={localStyles.summaryTagTextWrap}>
+                <Text style={localStyles.summaryTagLabel}>
+                  {t("Players")}
+                </Text>
+                <Text style={localStyles.summaryTagText}>
+                  {players.length}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -489,6 +560,8 @@ export default function GameLobby({ route, navigation }) {
     const playerKey = item.usernameKey || toUserKey(item.username);
     const isCurrentUser = playerKey === usernameKey;
     const canRemove = isHost && !isCurrentUser;
+    const showHostBadge = !!item.isHost;
+    const showPlusBadge = !!item.isPlus;
     const initial =
       item.username && item.username.length > 0
         ? item.username.charAt(0).toUpperCase()
@@ -522,6 +595,32 @@ export default function GameLobby({ route, navigation }) {
         <Text style={localStyles.playerName} numberOfLines={1}>
           {item.username}
         </Text>
+        {(showHostBadge || showPlusBadge) && (
+          <View style={localStyles.playerBadgesRow}>
+            {showHostBadge && (
+              <View style={localStyles.hostBadge}>
+                <Ionicons
+                  name="ribbon-outline"
+                  size={14}
+                  color="#c2724e"
+                  style={localStyles.hostBadgeIcon}
+                />
+                <Text style={localStyles.hostBadgeText}>{t("Host")}</Text>
+              </View>
+            )}
+            {showPlusBadge && (
+              <View style={localStyles.plusBadge}>
+                <Ionicons
+                  name="sparkles"
+                  size={14}
+                  color="#ff66c4"
+                  style={localStyles.plusBadgeIcon}
+                />
+                <Text style={localStyles.plusBadgeText}>{t("Plus")}</Text>
+              </View>
+            )}
+          </View>
+        )}
         <View
           style={[
             localStyles.playerStatus,
@@ -746,19 +845,25 @@ export default function GameLobby({ route, navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenPlus={() => {
+            if (isPlus) {
+              return;
+            }
             setShowSettings(false);
             setShowPlus(true);
           }}
           showLeave
           onLeave={leaveLobby}
+          isPlus={isPlus}
         />
-        <PlusModal
-          visible={showPlus}
-          onClose={() => setShowPlus(false)}
-          planName={planName}
-          planPrice={planPrice}
-          onRestorePurchases={handleRestorePurchases}
-        />
+        {!isPlus && (
+          <PlusModal
+            visible={showPlus}
+            onClose={() => setShowPlus(false)}
+            planName={planName}
+            planPrice={planPrice}
+            onRestorePurchases={handleRestorePurchases}
+          />
+        )}
       </SafeAreaView>
     </View>
   );
@@ -851,32 +956,73 @@ const localStyles = StyleSheet.create({
   pinBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    backgroundColor: "rgba(255, 102, 196, 0.12)",
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 10,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 102, 196, 0.25)",
   },
-  pinBadgeText: {
-    marginLeft: 6,
-    fontSize: 13,
+  pinBadgeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 102, 196, 0.18)",
+    marginRight: 10,
+  },
+  pinBadgeTextWrap: {
+    alignItems: "flex-start",
+  },
+  pinBadgeLabel: {
+    fontSize: 11,
     fontWeight: "700",
     letterSpacing: 1,
-    color: "#4C416A",
+    color: "#8b2f6b",
     textTransform: "uppercase",
+  },
+  pinBadgeText: {
+    marginTop: 2,
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: 2,
+    color: "#2d102a",
   },
   summaryTag: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 145, 77, 0.12)",
+    backgroundColor: "rgba(255, 145, 77, 0.14)",
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.25)",
+  },
+  summaryTagIconWrap: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 145, 77, 0.18)",
+    marginRight: 10,
+  },
+  summaryTagTextWrap: {
+    alignItems: "flex-start",
+  },
+  summaryTagLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    color: "#c2724e",
+    textTransform: "uppercase",
   },
   summaryTagText: {
-    marginLeft: 6,
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#c2724e",
+    marginTop: 2,
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#7c2d12",
   },
   summaryRow: {
     flexDirection: "row",
@@ -967,6 +1113,54 @@ const localStyles = StyleSheet.create({
     color: "#362B58",
     textAlign: "center",
     marginBottom: 10,
+  },
+  playerBadgesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: -6,
+    marginBottom: 10,
+  },
+  hostBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 145, 77, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.3)",
+    marginRight: 6,
+  },
+  hostBadgeIcon: {
+    marginRight: 6,
+  },
+  hostBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    color: "#c2724e",
+    textTransform: "uppercase",
+  },
+  plusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 102, 196, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 102, 196, 0.3)",
+  },
+  plusBadgeIcon: {
+    marginRight: 6,
+  },
+  plusBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    color: "#b91c7f",
+    textTransform: "uppercase",
   },
   playerStatus: {
     flexDirection: "row",
