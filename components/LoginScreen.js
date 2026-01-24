@@ -18,6 +18,7 @@ import theme from "../utils/theme";
 import { useLanguage } from "../contexts/LanguageContext";
 import LanguageToggle from "./LanguageToggle";
 import getLogoSource from "../utils/logo";
+import MotionFloat from "./MotionFloat";
 import { auth } from "../firebaseConfig";
 import { signInAnonymously } from "firebase/auth";
 import { useEffect } from "react";
@@ -78,8 +79,13 @@ export default function LoginScreen({ navigation }) {
 
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={8} driftY={-12} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-6}
+            driftY={10}
+            delay={450}
+          />
         </View>
 
         <KeyboardAvoidingView

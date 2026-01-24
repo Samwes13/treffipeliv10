@@ -1,4 +1,4 @@
-Mita olen oppinut Treffipelin rakenteesta
+    Mita olen oppinut Treffipelin rakenteesta
 =========================================
 
 1. Kokonaisarkkitehtuuri

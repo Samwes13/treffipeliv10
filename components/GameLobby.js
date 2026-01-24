@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
-  TouchableOpacity,
   Text,
   FlatList,
   Image,
   ActivityIndicator,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -17,6 +17,7 @@ import {
   get,
   set,
   runTransaction,
+  serverTimestamp,
 } from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
@@ -29,9 +30,13 @@ import getLogoSource from "../utils/logo";
 import useInterstitialAd from "../hooks/useInterstitialAd";
 import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
+import GameRulesModal from "./GameRulesModal";
 import { saveSession, clearSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
 import * as Clipboard from "expo-clipboard";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
+import { isGameInactive } from "../utils/gameActivity";
 
 const INITIAL_ANIMATION_DURATION_MS = 4000;
 const GAME_START_COUNTDOWN_MS = 4000;
@@ -52,9 +57,12 @@ export default function GameLobby({ route, navigation }) {
   const [countdownActive, setCountdownActive] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const hasNavigatedRef = useRef(false);
+  const staleHandledRef = useRef(false);
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { t, language } = useLanguage();
   const { isPlus, restorePurchases } = usePlus();
   const logoSource = getLogoSource(language);
@@ -63,6 +71,34 @@ export default function GameLobby({ route, navigation }) {
   const planName = "Plus";
   const planPrice = "2,99 EUR";
   const copyTimeoutRef = useRef(null);
+  const countdownOverlayPadding = 24;
+  const countdownBoxPadding = 24;
+  const countdownBoxWidth = Math.min(
+    Math.max(0, width - countdownOverlayPadding * 2) * 0.8,
+    340,
+  );
+  const countdownTextMaxWidth = Math.max(
+    0,
+    countdownBoxWidth - countdownBoxPadding * 2,
+  );
+  const countdownBaseSize = Math.max(
+    36,
+    Math.min(56, Math.round(width * 0.16)),
+  );
+  const countdownGoBaseSize = Math.min(62, Math.round(width * 0.18));
+  const goLabelLength = Math.max(1, goLabel.length);
+  const countdownGoSizeByWidth = Math.floor(
+    countdownTextMaxWidth / (goLabelLength * 0.7),
+  );
+  const countdownGoSize = Math.max(
+    34,
+    Math.min(
+      countdownGoBaseSize,
+      countdownGoSizeByWidth || countdownGoBaseSize,
+    ),
+  );
+  const countdownLineHeight = Math.round(countdownBaseSize * 1.08);
+  const countdownGoLineHeight = Math.round(countdownGoSize * 1.05);
   const handleRestorePurchases = async () => {
     try {
       await restorePurchases();
@@ -81,6 +117,9 @@ export default function GameLobby({ route, navigation }) {
       const playerRef = ref(database, `games/${gamepin}/players/${playerKey}`);
       const traitsRef = ref(database, `games/${gamepin}/traits/${playerKey}`);
       await Promise.all([remove(playerRef), remove(traitsRef)]);
+      await update(ref(database, `games/${gamepin}`), {
+        lastActivityAt: serverTimestamp(),
+      });
       await clearSession();
       navigation.reset({
         index: 0,
@@ -138,6 +177,23 @@ export default function GameLobby({ route, navigation }) {
 
       if (!gameData) {
         setCountdownData(null);
+        return;
+      }
+      if (isGameInactive(gameData.lastActivityAt)) {
+        if (!staleHandledRef.current) {
+          staleHandledRef.current = true;
+          remove(gameRef).catch((error) => {
+            console.warn(
+              "Failed to remove inactive game:",
+              error?.message || error,
+            );
+          });
+          clearSession();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "EnterUsername" }],
+          });
+        }
         return;
       }
 
@@ -283,6 +339,9 @@ export default function GameLobby({ route, navigation }) {
       setCountdownStep("3");
       setCountdownActive(true);
       await set(countdownRef, countdownPayload);
+      await update(ref(database, `games/${gamepin}`), {
+        lastActivityAt: serverTimestamp(),
+      });
     } catch (error) {
       setCountdownData(null);
       setCountdownStep(null);
@@ -361,6 +420,7 @@ export default function GameLobby({ route, navigation }) {
             currentPlayerIndex: 0,
             currentRound: 1,
             isGameStarted: true,
+            lastActivityAt: serverTimestamp(),
           });
 
           if (firstPlayerName && shuffledTraits[0]) {
@@ -430,6 +490,10 @@ export default function GameLobby({ route, navigation }) {
       );
       await remove(traitsRef);
 
+      await update(ref(database, `games/${gamepin}`), {
+        lastActivityAt: serverTimestamp(),
+      });
+
       if (targetKey === usernameKey) {
         navigation.navigate("JoinGame", { username });
       }
@@ -468,11 +532,6 @@ export default function GameLobby({ route, navigation }) {
       />
       <View style={localStyles.hero}>
         <Text style={localStyles.heroTitle}>{t("Game Lobby")}</Text>
-        <Text style={localStyles.heroSubtitle}>
-          {t(
-            "Wait here until everyone is in and ready to go. Share the game code with friends and keep an eye on their progress.",
-          )}
-        </Text>
       </View>
 
       <LinearGradient
@@ -484,7 +543,7 @@ export default function GameLobby({ route, navigation }) {
         <View style={localStyles.summaryCard}>
           <View style={localStyles.summaryHeader}>
             <View style={localStyles.pinBadge}>
-              <TouchableOpacity
+              <MotionPressable
                 style={localStyles.pinBadgeIconWrap}
                 onPress={handleCopyGameCode}
                 disabled={!gamepin}
@@ -498,7 +557,7 @@ export default function GameLobby({ route, navigation }) {
                   size={18}
                   color={codeCopied ? "#16a34a" : "#ff66c4"}
                 />
-              </TouchableOpacity>
+              </MotionPressable>
               <View style={localStyles.pinBadgeTextWrap}>
                 <Text style={localStyles.pinBadgeLabel}>
                   {t("Game Code")}
@@ -570,7 +629,7 @@ export default function GameLobby({ route, navigation }) {
     return (
       <View style={localStyles.playerCard}>
         {canRemove && (
-          <TouchableOpacity
+          <MotionPressable
             onPress={() => showRemoveModal(item)}
             style={localStyles.removeButton}
             accessibilityRole="button"
@@ -579,7 +638,7 @@ export default function GameLobby({ route, navigation }) {
             })}
           >
             <Ionicons name="remove-circle" size={20} color="#ef4444" />
-          </TouchableOpacity>
+          </MotionPressable>
         )}
 
         <View
@@ -651,7 +710,7 @@ export default function GameLobby({ route, navigation }) {
           )}
         </View>
         {isCurrentUser && (
-          <TouchableOpacity
+          <MotionPressable
             activeOpacity={0.9}
             onPress={() =>
               navigation.navigate("CardTraits", {
@@ -669,7 +728,7 @@ export default function GameLobby({ route, navigation }) {
               style={localStyles.editButtonIcon}
             />
             <Text style={localStyles.editButtonText}>{t("Edit Traits")}</Text>
-          </TouchableOpacity>
+          </MotionPressable>
         )}
       </View>
     );
@@ -694,7 +753,7 @@ export default function GameLobby({ route, navigation }) {
                 : t("Waiting for players to finish prepping before we begin.")}
             </Text>
           </View>
-          <TouchableOpacity
+          <MotionPressable
             activeOpacity={0.9}
             onPress={startGame}
             disabled={!canStart}
@@ -718,7 +777,7 @@ export default function GameLobby({ route, navigation }) {
               </Text>
               <Ionicons name="play-circle" size={26} color="#ffffff" />
             </LinearGradient>
-          </TouchableOpacity>
+          </MotionPressable>
         </View>
       );
     }
@@ -755,10 +814,15 @@ export default function GameLobby({ route, navigation }) {
       />
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={9} driftY={-13} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-7}
+            driftY={11}
+            delay={500}
+          />
         </View>
-        <TouchableOpacity
+        <MotionPressable
           style={[
             localStyles.settingsButton,
             {
@@ -771,7 +835,7 @@ export default function GameLobby({ route, navigation }) {
           accessibilityLabel={t("Settings")}
         >
           <Ionicons name="settings-outline" size={22} color="#fff" />
-        </TouchableOpacity>
+        </MotionPressable>
 
         <View style={localStyles.container}>
           <FlatList
@@ -831,9 +895,18 @@ export default function GameLobby({ route, navigation }) {
                 {t("Game starting in")}
               </Text>
               <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+                ellipsizeMode="clip"
                 style={[
                   localStyles.countdownValue,
                   countdownStep === goLabel && localStyles.countdownGoValue,
+                  { fontSize: countdownBaseSize, lineHeight: countdownLineHeight },
+                  countdownStep === goLabel && {
+                    fontSize: countdownGoSize,
+                    lineHeight: countdownGoLineHeight,
+                  },
                 ]}
               >
                 {countdownStep}
@@ -844,6 +917,7 @@ export default function GameLobby({ route, navigation }) {
         <SettingsModal
           visible={showSettings}
           onClose={() => setShowSettings(false)}
+          onOpenGameRules={() => setShowRules(true)}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -864,6 +938,10 @@ export default function GameLobby({ route, navigation }) {
             onRestorePurchases={handleRestorePurchases}
           />
         )}
+        <GameRulesModal
+          visible={showRules}
+          onClose={() => setShowRules(false)}
+        />
       </SafeAreaView>
     </View>
   );
@@ -1221,12 +1299,15 @@ const localStyles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.6,
     textTransform: "uppercase",
+    textAlign: "center",
   },
   countdownValue: {
     marginTop: 12,
     fontSize: 48,
     fontWeight: "800",
     color: "#FFFFFF",
+    width: "100%",
+    textAlign: "center",
   },
   countdownGoValue: {
     color: "#FFE066",

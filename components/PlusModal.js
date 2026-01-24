@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   Modal,
   StyleSheet,
   Linking,
+  Platform,
   ActivityIndicator,
   Alert,
 } from "react-native";
@@ -15,6 +15,11 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { usePlus } from "../contexts/PlusContext";
 import theme from "../utils/theme";
 import Purchases from "react-native-purchases";
+import {
+  loadPlusModalHidden,
+  savePlusModalHidden,
+} from "../utils/plusModalPreference";
+import MotionPressable from "./MotionPressable";
 
 export default function PlusModal({
   visible,
@@ -27,12 +32,17 @@ export default function PlusModal({
 }) {
   const { t, language } = useLanguage();
   const { refreshPlusStatus, restorePurchases } = usePlus();
+  const iosTermsUrl =
+    "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
+  const effectiveTermsUrl = Platform.OS === "ios" ? iosTermsUrl : termsUrl;
   const [displayPrice, setDisplayPrice] = useState("");
   const [displayCaption, setDisplayCaption] = useState("");
   const [loadingPrice, setLoadingPrice] = useState(false);
+  const [packageOptions, setPackageOptions] = useState([]);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [purchaseInProgress, setPurchaseInProgress] = useState(false);
   const [restoreInProgress, setRestoreInProgress] = useState(false);
+  const [hideNextTime, setHideNextTime] = useState(false);
 
   const openLink = async (url) => {
     try {
@@ -46,6 +56,58 @@ export default function PlusModal({
   };
 
   const purchaseDisabled = purchaseInProgress || loadingPrice || !selectedPackage;
+
+  const packageLabel = (pkgType) => {
+    const type = (pkgType || "").toUpperCase();
+    if (type === "WEEKLY") {
+      return t("per week");
+    }
+    if (type === "MONTHLY") {
+      return t("per month");
+    }
+    return type || "";
+  };
+
+  const packageName = (pkgType) => {
+    const type = (pkgType || "").toUpperCase();
+    if (type === "WEEKLY") {
+      return t("Weekly");
+    }
+    if (type === "MONTHLY") {
+      return t("Monthly");
+    }
+    return type || t("Subscription");
+  };
+
+  const billingLabel = (pkgType) => {
+    const type = (pkgType || "").toUpperCase();
+    if (type === "WEEKLY") {
+      return t("Billed weekly");
+    }
+    if (type === "MONTHLY") {
+      return t("Billed monthly");
+    }
+    return "";
+  };
+
+  const selectedPlanName = selectedPackage
+    ? packageName(selectedPackage.packageType)
+    : "";
+  const offerTypeText = selectedPlanName
+    ? `${t("Subscription")} - ${selectedPlanName}`
+    : t("Subscription");
+
+  const selectPackage = (pkg) => {
+    if (!pkg) {
+      setSelectedPackage(null);
+      setDisplayPrice("");
+      setDisplayCaption("");
+      return;
+    }
+    setSelectedPackage(pkg);
+    setDisplayPrice(pkg?.product?.priceString || "");
+    setDisplayCaption(packageLabel(pkg?.packageType));
+  };
 
   const getHasPlus = (info) => {
     const activeEntitlements = info?.entitlements?.active || {};
@@ -117,11 +179,17 @@ export default function PlusModal({
     }
   };
 
-  const handlePurchase = async () => {
-    if (purchaseDisabled) {
+  const handlePurchase = async (pkgOverride) => {
+    if (purchaseInProgress || loadingPrice) {
       return;
     }
-    if (!selectedPackage) {
+    const overridePackage =
+      pkgOverride &&
+      (pkgOverride?.product || pkgOverride?.identifier || pkgOverride?.packageType)
+        ? pkgOverride
+        : null;
+    const packageToBuy = overridePackage || selectedPackage;
+    if (!packageToBuy) {
       Alert.alert(
         t("Notice"),
         t("Something went wrong. Please try again shortly."),
@@ -130,7 +198,10 @@ export default function PlusModal({
     }
     try {
       setPurchaseInProgress(true);
-      const result = await Purchases.purchasePackage(selectedPackage);
+      if (overridePackage) {
+        selectPackage(overridePackage);
+      }
+      const result = await Purchases.purchasePackage(packageToBuy);
       const info = result?.customerInfo || result;
       await applyCustomerInfo(info);
       try {
@@ -183,15 +254,32 @@ export default function PlusModal({
     }
   };
 
+  const toggleHideNextTime = async () => {
+    const nextValue = !hideNextTime;
+    setHideNextTime(nextValue);
+    await savePlusModalHidden(nextValue);
+  };
+
   useEffect(() => {
     let mounted = true;
-    const packageLabel = (pkgType) => {
-      const type = (pkgType || "").toUpperCase();
-      if (type === "MONTHLY") {
-        return language === "fi" ? t("per month") : t("per month");
+    const loadPreference = async () => {
+      if (!visible) {
+        return;
       }
-      return type || "";
+      const hidden = await loadPlusModalHidden();
+      if (mounted) {
+        setHideNextTime(hidden);
+      }
     };
+
+    loadPreference();
+    return () => {
+      mounted = false;
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    let mounted = true;
 
     const fetchOfferings = async () => {
       if (!visible) {
@@ -206,21 +294,24 @@ export default function PlusModal({
         }
         const offerings = await Purchases.getOfferings();
         const current = offerings?.current;
-        const pkg =
+        const available = current?.availablePackages || [];
+        const weekly =
+          current?.weekly ||
+          available.find((p) => p?.packageType?.toLowerCase?.() === "weekly");
+        const monthly =
           current?.monthly ||
-          current?.availablePackages?.find(
-            (p) => p?.packageType?.toLowerCase?.() === "monthly",
-          ) ||
-          current?.availablePackages?.[0];
-        const priceString = pkg?.product?.priceString;
-        const caption = packageLabel(pkg?.packageType);
-        if (priceString && mounted) {
-          setSelectedPackage(pkg || null);
-          setDisplayPrice(priceString);
-          setDisplayCaption(caption);
+          available.find((p) => p?.packageType?.toLowerCase?.() === "monthly");
+        const options = [weekly, monthly].filter(Boolean);
+        const fallback = available[0] || null;
+        const nextOptions = options.length ? options : fallback ? [fallback] : [];
+        if (mounted) {
+          setPackageOptions(nextOptions);
+          const defaultPkg = monthly || weekly || fallback;
+          selectPackage(defaultPkg);
         }
       } catch (error) {
         if (mounted) {
+          setPackageOptions([]);
           setDisplayPrice("");
           setDisplayCaption("");
           setSelectedPackage(null);
@@ -255,7 +346,7 @@ export default function PlusModal({
               <Ionicons name="sparkles" size={18} color="#FFD5FF" />
               <Text style={styles.offerBadgeText}>{planName}</Text>
             </View>
-            <Text style={styles.offerType}>{t("Subscription")}</Text>
+            <Text style={styles.offerType}>{offerTypeText}</Text>
             <View style={styles.offerPriceRow}>
               <Text style={styles.offerPrice}>
                 {loadingPrice
@@ -266,12 +357,71 @@ export default function PlusModal({
                 <Text style={styles.offerPriceCaption}>{displayCaption}</Text>
               ) : null}
             </View>
-            <TouchableOpacity style={styles.offerClose} onPress={onClose}>
+            <MotionPressable style={styles.offerClose} onPress={onClose}>
               <Ionicons name="close" size={22} color="#ffffff" />
-            </TouchableOpacity>
+            </MotionPressable>
           </LinearGradient>
 
             <View style={styles.offerBody}>
+              {packageOptions.length > 0 && (
+                <View style={styles.planSwitcher}>
+                  {packageOptions.map((pkg, index) => {
+                    const isSelected = pkg === selectedPackage;
+                    const optionDisabled =
+                      purchaseInProgress || loadingPrice || !pkg;
+                    const title = packageName(pkg?.packageType);
+                    const price = pkg?.product?.priceString || "";
+                    const caption = billingLabel(pkg?.packageType);
+                    return (
+                      <MotionPressable
+                        key={pkg?.identifier || `${title}-${index}`}
+                        style={[
+                          styles.planOption,
+                          index < packageOptions.length - 1 &&
+                            styles.planOptionSpacer,
+                          isSelected && styles.planOptionActive,
+                          optionDisabled && styles.planOptionDisabled,
+                        ]}
+                        onPress={() => selectPackage(pkg)}
+                        activeOpacity={0.9}
+                        disabled={optionDisabled}
+                      >
+                        <View style={styles.planOptionHeader}>
+                          <Text
+                            style={[
+                              styles.planOptionTitle,
+                              isSelected && styles.planOptionTitleActive,
+                            ]}
+                          >
+                            {title}
+                          </Text>
+                          {isSelected && (
+                            <View style={styles.planOptionCheck}>
+                              <Ionicons name="checkmark" size={12} color="#fff" />
+                            </View>
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.planOptionPrice,
+                            isSelected && styles.planOptionPriceActive,
+                          ]}
+                        >
+                          {price || t("Price unavailable")}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.planOptionCaption,
+                            isSelected && styles.planOptionCaptionActive,
+                          ]}
+                        >
+                          {caption || packageLabel(pkg?.packageType)}
+                        </Text>
+                      </MotionPressable>
+                    );
+                  })}
+                </View>
+              )}
               <View style={styles.offerListItem}>
                 <Ionicons
                   name="checkmark-circle"
@@ -299,13 +449,13 @@ export default function PlusModal({
               <Text style={styles.offerListText}>{t("Cancel anytime")}</Text>
             </View>
 
-            <TouchableOpacity
+            <MotionPressable
               style={[
                 styles.offerButton,
                 purchaseDisabled && styles.offerButtonDisabled,
               ]}
               activeOpacity={0.9}
-              onPress={handlePurchase}
+              onPress={() => handlePurchase()}
               disabled={purchaseDisabled}
             >
               <LinearGradient
@@ -323,21 +473,37 @@ export default function PlusModal({
                   <Ionicons name="arrow-forward" size={18} color="#fff" />
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </MotionPressable>
 
-              <TouchableOpacity
+              <MotionPressable
                 style={styles.offerLater}
                 onPress={onClose}
                 activeOpacity={0.8}
               >
                 <Text style={styles.offerLaterText}>{t("Maybe later")}</Text>
-              </TouchableOpacity>
+              </MotionPressable>
+
+              <MotionPressable
+                style={styles.hideToggleRow}
+                onPress={toggleHideNextTime}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: hideNextTime }}
+              >
+                <Ionicons
+                  name={hideNextTime ? "checkbox" : "square-outline"}
+                  size={20}
+                  color={hideNextTime ? theme.accentPrimary : theme.helperText}
+                />
+                <Text style={styles.hideToggleText}>
+                  {t("Don't show again")}
+                </Text>
+              </MotionPressable>
 
               <View style={styles.divider} />
 
-              <TouchableOpacity
+              <MotionPressable
                 style={styles.linkRow}
-                onPress={() => openLink(termsUrl)}
+                onPress={() => openLink(effectiveTermsUrl)}
                 activeOpacity={0.8}
               >
                 <Ionicons
@@ -351,8 +517,8 @@ export default function PlusModal({
                   size={16}
                   color={theme.helperText}
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </MotionPressable>
+              <MotionPressable
                 style={styles.linkRow}
                 onPress={() => openLink(privacyUrl)}
                 activeOpacity={0.8}
@@ -368,8 +534,8 @@ export default function PlusModal({
                   size={16}
                   color={theme.helperText}
                 />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </MotionPressable>
+              <MotionPressable
                 style={styles.restoreButton}
                 onPress={handleRestore}
                 activeOpacity={0.85}
@@ -389,7 +555,7 @@ export default function PlusModal({
                     style={styles.restoreSpinner}
                   />
                 )}
-              </TouchableOpacity>
+              </MotionPressable>
             </View>
           </View>
         </View>
@@ -476,6 +642,74 @@ const styles = StyleSheet.create({
     padding: 18,
     backgroundColor: "#ffffff",
   },
+  planSwitcher: {
+    flexDirection: "row",
+    marginBottom: 12,
+  },
+  planOption: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(126, 80, 180, 0.2)",
+    shadowColor: "#11022C",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  planOptionDisabled: {
+    opacity: 0.6,
+  },
+  planOptionSpacer: {
+    marginRight: 10,
+  },
+  planOptionActive: {
+    backgroundColor: "rgba(136, 86, 246, 0.12)",
+    borderColor: "rgba(136, 86, 246, 0.55)",
+  },
+  planOptionTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#40274A",
+    letterSpacing: 0.4,
+  },
+  planOptionTitleActive: {
+    color: "#5B2FB6",
+  },
+  planOptionPrice: {
+    marginTop: 6,
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#2D1837",
+  },
+  planOptionPriceActive: {
+    color: "#4B1D8D",
+  },
+  planOptionCaption: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(64, 39, 74, 0.7)",
+  },
+  planOptionCaptionActive: {
+    color: "rgba(91, 47, 182, 0.85)",
+  },
+  planOptionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  planOptionCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#5B2FB6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   offerListItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -515,6 +749,18 @@ const styles = StyleSheet.create({
     color: theme.helperText,
     fontSize: 14,
     fontWeight: "600",
+  },
+  hideToggleRow: {
+    marginTop: 10,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  hideToggleText: {
+    marginLeft: 8,
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.helperText,
   },
   restoreButton: {
     marginTop: 10,

@@ -20,6 +20,7 @@
     "expo-av": "~15.1.7",
     "expo-blur": "~14.1.5",
     "expo-clipboard": "~7.1.5",
+    "expo-dev-client": "~5.2.4",
     "expo-linear-gradient": "~14.1.5",
     "expo-status-bar": "~2.2.3",
     "firebase": "^12.2.1",
@@ -34,7 +35,8 @@
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-svg": "^15.11.2",
-    "react-native-web": "^0.20.0"
+    "react-native-web": "^0.20.0",
+    "expo-network": "~7.1.5"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

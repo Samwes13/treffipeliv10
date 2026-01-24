@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
-  TouchableOpacity,
   Text,
-  Modal,
   Image,
   ScrollView,
   StyleSheet,
@@ -14,10 +12,10 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, update } from "firebase/database";
+import { ref, update, serverTimestamp } from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
-import GameRules from "./GameRules";
+import GameRulesModal from "./GameRulesModal";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../contexts/LanguageContext";
 import LanguageToggle from "./LanguageToggle";
@@ -28,6 +26,10 @@ import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
 import { saveSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
+import { loadPlusModalHidden } from "../utils/plusModalPreference";
+import { loadHowToPlayHidden } from "../utils/howToPlayPreference";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
 
 export default function GameOptionsScreen({ route, navigation }) {
   const rawUsername = route.params?.username ?? "";
@@ -41,7 +43,7 @@ export default function GameOptionsScreen({ route, navigation }) {
   );
 
   const [showRules, setShowRules] = useState(false);
-  const [showSubscription, setShowSubscription] = useState(true);
+  const [showSubscription, setShowSubscription] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
@@ -64,7 +66,16 @@ export default function GameOptionsScreen({ route, navigation }) {
     navigation.navigate("EnterUsername");
   };
 
-  const createGame = () => {
+  const navigateToTraits = async (params) => {
+    const hidden = await loadHowToPlayHidden();
+    if (hidden) {
+      navigation.navigate("CardTraits", params);
+      return;
+    }
+    navigation.navigate("HowToPlay", params);
+  };
+
+  const createGame = async () => {
     if (!playerName) {
       handleMissingName();
       return;
@@ -76,6 +87,7 @@ export default function GameOptionsScreen({ route, navigation }) {
       host: playerName,
       gamepin: gamepin,
       isGameStarted: false,
+      lastActivityAt: serverTimestamp(),
       players: {
         [usernameKey]: {
           username: playerName,
@@ -87,9 +99,9 @@ export default function GameOptionsScreen({ route, navigation }) {
       },
     });
 
-    saveSession(playerName, gamepin);
+    await saveSession(playerName, gamepin);
 
-    navigation.navigate("CardTraits", { username: playerName, gamepin });
+    await navigateToTraits({ username: playerName, gamepin });
   };
 
   const joinGame = () => {
@@ -102,7 +114,21 @@ export default function GameOptionsScreen({ route, navigation }) {
   };
 
   useEffect(() => {
-    setShowSubscription(!isPlus);
+    let mounted = true;
+    const syncPlusModal = async () => {
+      const hidden = await loadPlusModalHidden();
+      if (!mounted) {
+        return;
+      }
+      if (!hidden) {
+        setShowSubscription(!isPlus);
+      }
+    };
+
+    syncPlusModal();
+    return () => {
+      mounted = false;
+    };
   }, [isPlus]);
 
   return (
@@ -117,41 +143,24 @@ export default function GameOptionsScreen({ route, navigation }) {
 
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={10} driftY={-14} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-8}
+            driftY={12}
+            delay={500}
+          />
         </View>
 
-        <Modal
+        <GameRulesModal
           visible={showRules}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowRules(false)}
-        >
-          <View style={localStyles.modalBackdrop}>
-            <View style={localStyles.modalPanel}>
-              <View style={localStyles.modalHeader}>
-                <Text style={localStyles.modalTitle}>{t("Game Rules")}</Text>
-                <TouchableOpacity
-                  style={localStyles.modalCloseButton}
-                  onPress={() => setShowRules(false)}
-                >
-                  <Ionicons
-                    name="close"
-                    size={22}
-                    color={theme.helperText}
-                  />
-                </TouchableOpacity>
-              </View>
-              <View style={localStyles.modalBody}>
-                <GameRules />
-              </View>
-            </View>
-          </View>
-        </Modal>
+          onClose={() => setShowRules(false)}
+        />
 
         <SettingsModal
           visible={showSettings}
           onClose={() => setShowSettings(false)}
+          onOpenGameRules={() => setShowRules(true)}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -192,16 +201,16 @@ export default function GameOptionsScreen({ route, navigation }) {
                   </View>
                 )}
               </View>
-              <TouchableOpacity
+              <MotionPressable
                 style={localStyles.settingsButton}
                 onPress={() => setShowSettings(true)}
                 activeOpacity={0.8}
                 accessibilityLabel={t("Settings")}
               >
                 <Ionicons name="settings-outline" size={22} color="#fff" />
-              </TouchableOpacity>
+              </MotionPressable>
             </View>
-              <Image source={logoSource} style={localStyles.logo} />
+            <Image source={logoSource} style={localStyles.logo} />
 
             <View style={localStyles.hero}>
               <View style={localStyles.heroBadge}>
@@ -228,7 +237,7 @@ export default function GameOptionsScreen({ route, navigation }) {
                   </Text>
                 </View>
 
-                <TouchableOpacity
+                <MotionPressable
                   activeOpacity={0.92}
                   style={localStyles.primaryAction}
                   onPress={createGame}
@@ -259,9 +268,9 @@ export default function GameOptionsScreen({ route, navigation }) {
                       </View>
                     </View>
                   </LinearGradient>
-                </TouchableOpacity>
+                </MotionPressable>
 
-                <TouchableOpacity
+                <MotionPressable
                   activeOpacity={0.88}
                   style={localStyles.secondaryAction}
                   onPress={joinGame}
@@ -285,10 +294,10 @@ export default function GameOptionsScreen({ route, navigation }) {
                       />
                     </View>
                   </View>
-                </TouchableOpacity>
+                </MotionPressable>
 
                 <View style={localStyles.cardFooter}>
-                  <TouchableOpacity
+                  <MotionPressable
                     activeOpacity={0.88}
                     style={[
                       localStyles.utilityButton,
@@ -306,8 +315,8 @@ export default function GameOptionsScreen({ route, navigation }) {
                   >
                       <Ionicons name="help-circle-outline" size={30} color="#ffffff" />
                     </LinearGradient>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </MotionPressable>
+                  <MotionPressable
                     activeOpacity={0.88}
                     style={localStyles.utilityButton}
                     onPress={handleMissingName}
@@ -322,7 +331,7 @@ export default function GameOptionsScreen({ route, navigation }) {
                     >
                       <Ionicons name="create" size={26} color="#ffffff" />
                     </LinearGradient>
-                  </TouchableOpacity>
+                  </MotionPressable>
                 </View>
 
               </View>
@@ -607,47 +616,30 @@ const localStyles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: theme.modalBackdrop,
+    backgroundColor: "rgba(26, 6, 24, 0.6)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
+    position: "relative",
+  },
+  modalBackdropGradient: {
+    ...StyleSheet.absoluteFillObject,
   },
   modalPanel: {
     width: "100%",
-    maxWidth: 620,
-    backgroundColor: "#ffffff",
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    shadowColor: "#11022C",
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.32,
-    shadowRadius: 30,
+    maxWidth: 640,
+    maxHeight: "92%",
+    flex: 1,
+    backgroundColor: "rgba(255, 236, 247, 0.96)",
+    borderRadius: 34,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    shadowColor: "#4B0F2E",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.28,
+    shadowRadius: 28,
     elevation: 12,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: theme.bodyText,
-  },
-  modalCloseButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.accentMuted,
-  },
-  modalBody: {
-    maxHeight: 520,
-    paddingBottom: 8,
   },
   settingsRow: {
     flexDirection: "row",

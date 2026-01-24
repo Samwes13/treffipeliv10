@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   Image,
   KeyboardAvoidingView,
   ScrollView,
@@ -23,7 +22,10 @@ import theme from "../utils/theme";
 import getLogoSource from "../utils/logo";
 import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
+import GameRulesModal from "./GameRulesModal";
 import { usePlus } from "../contexts/PlusContext";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
 
 const USERNAME_SUGGESTIONS = [
   "AuroraSoul",
@@ -56,6 +58,7 @@ export default function EnterUsername({ navigation }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
   const handleRestorePurchases = async () => {
@@ -119,8 +122,13 @@ export default function EnterUsername({ navigation }) {
       />
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={8} driftY={-12} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-6}
+            driftY={10}
+            delay={400}
+          />
         </View>
 
         <KeyboardAvoidingView
@@ -147,7 +155,7 @@ export default function EnterUsername({ navigation }) {
                     </View>
                   )}
                 </View>
-                <TouchableOpacity
+                <MotionPressable
                   style={localStyles.settingsButton}
                   onPress={() => setShowSettings(true)}
                   activeOpacity={0.8}
@@ -161,7 +169,7 @@ export default function EnterUsername({ navigation }) {
                   >
                     <Ionicons name="settings-outline" size={20} color="#fff" />
                   </LinearGradient>
-                </TouchableOpacity>
+                </MotionPressable>
               </View>
 
               <Image source={logoSource} style={localStyles.logo} />
@@ -221,7 +229,7 @@ export default function EnterUsername({ navigation }) {
                     </Text>
                   </View>
 
-                  <TouchableOpacity
+                  <MotionPressable
                     activeOpacity={0.85}
                     onPress={handleSuggestion}
                     style={localStyles.secondaryButton}
@@ -234,9 +242,9 @@ export default function EnterUsername({ navigation }) {
                     <Text style={localStyles.secondaryButtonText}>
                       {t("Generate Username")}
                     </Text>
-                  </TouchableOpacity>
+                  </MotionPressable>
 
-                  <TouchableOpacity
+                  <MotionPressable
                     activeOpacity={0.92}
                     onPress={handleSubmit}
                     style={localStyles.primaryButton}
@@ -256,7 +264,7 @@ export default function EnterUsername({ navigation }) {
                         color="#ffffff"
                       />
                     </LinearGradient>
-                  </TouchableOpacity>
+                  </MotionPressable>
 
                   <Text style={localStyles.helperText}>
                     {t("Tip: Short, punchy usernames are easier to remember.")}
@@ -274,6 +282,7 @@ export default function EnterUsername({ navigation }) {
         <SettingsModal
           visible={showSettings}
           onClose={() => setShowSettings(false)}
+          onOpenGameRules={() => setShowRules(true)}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -292,6 +301,10 @@ export default function EnterUsername({ navigation }) {
             onRestorePurchases={handleRestorePurchases}
           />
         )}
+        <GameRulesModal
+          visible={showRules}
+          onClose={() => setShowRules(false)}
+        />
       </SafeAreaView>
 
       <ModalAlert

@@ -3,18 +3,27 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   Modal,
+  Alert,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
   StyleSheet,
+  useWindowDimensions,
   findNodeHandle,
   UIManager,
   Image,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ref, update, get, push, set } from "firebase/database";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  ref,
+  update,
+  get,
+  push,
+  set,
+  serverTimestamp,
+  remove,
+} from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,8 +34,15 @@ import { toUserKey } from "../utils/userKey";
 import { usePlus } from "../contexts/PlusContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
+import SettingsModal from "./SettingsModal";
+import PlusModal from "./PlusModal";
+import GameRulesModal from "./GameRulesModal";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
+import { clearSession } from "../utils/session";
 
 const TRAIT_COUNT = 6;
+const MIN_INPUT_HEIGHT = 52;
 const TRAIT_GUIDE_STORAGE_KEY = "cardTraitsGuideHidden";
 const TRAIT_GUIDE_IMAGES = {
   en: {
@@ -173,21 +189,61 @@ const TURN_OFF_TRAITS_FI = [
 export default function CardTraits({ navigation, route }) {
   const { t, language } = useLanguage();
   const { username = "", gamepin = "" } = route.params || {};
-  const { isPlus } = usePlus();
+  const { isPlus, restorePurchases } = usePlus();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const insetTop = insets?.top || 0;
+  const insetBottom = insets?.bottom || 0;
+  const safeHeight = Math.max(0, windowHeight - insetTop - insetBottom);
+  const effectiveHeight =
+    safeHeight > windowHeight * 0.6 ? safeHeight : windowHeight;
+  const guideVerticalPadding = Math.max(
+    12,
+    Math.min(20, Math.round(effectiveHeight * 0.03)),
+  );
+  const guideHorizontalPadding = Math.max(
+    14,
+    Math.min(22, Math.round(windowWidth * 0.05)),
+  );
+  const guideMaxHeight = Math.max(
+    0,
+    effectiveHeight - guideVerticalPadding * 2,
+  );
+  const guideCardShellSize =
+    guideMaxHeight > 0
+      ? { height: guideMaxHeight, maxHeight: guideMaxHeight }
+      : null;
   const [traits, setTraits] = useState(Array(TRAIT_COUNT).fill(""));
+  const [inputHeights, setInputHeights] = useState(() =>
+    Array(TRAIT_COUNT).fill(MIN_INPUT_HEIGHT),
+  );
   const [touchedInputs, setTouchedInputs] = useState({});
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideOptOut, setGuideOptOut] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPlus, setShowPlus] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [leaveInProgress, setLeaveInProgress] = useState(false);
   const [alertState, setAlertState] = useState({
     visible: false,
     title: "",
     message: "",
     variant: "info",
   });
+  const planName = "Plus";
+  const planPrice = "2,99 EUR";
   const scrollRef = useRef(null);
   const inputWrapperRefs = useRef([]);
+  const inputRefs = useRef([]);
   const copyTimeoutRef = useRef(null);
+  const handleRestorePurchases = async () => {
+    try {
+      await restorePurchases();
+    } catch (error) {
+      console.warn("Restore purchases failed", error?.message || error);
+    }
+  };
 
   const turnOnPool = language === "fi" ? TURN_ON_TRAITS_FI : TURN_ON_TRAITS_EN;
   const turnOffPool =
@@ -246,6 +302,21 @@ export default function CardTraits({ navigation, route }) {
     });
   };
 
+  const handleInputSizeChange = (index, event) => {
+    const nextHeight = Math.max(
+      MIN_INPUT_HEIGHT,
+      Math.ceil(event?.nativeEvent?.contentSize?.height || 0),
+    );
+    setInputHeights((current) => {
+      if (current[index] === nextHeight) {
+        return current;
+      }
+      const next = [...current];
+      next[index] = nextHeight;
+      return next;
+    });
+  };
+
   const handleAutoFillSingle = (index) => {
     const pool = index < 3 ? turnOnPool : turnOffPool;
     const usedSet = new Set(
@@ -271,6 +342,11 @@ export default function CardTraits({ navigation, route }) {
       next[index] = nextTrait;
       return next;
     });
+    const targetInput = inputRefs.current[index];
+    if (targetInput?.setNativeProps) {
+      // Ensure programmatic autofill updates TextInput UI immediately on all devices.
+      targetInput.setNativeProps({ text: nextTrait });
+    }
   };
 
   useEffect(() => {
@@ -465,6 +541,140 @@ export default function CardTraits({ navigation, route }) {
     }
   };
 
+  const leaveGame = async (gameDataOverride) => {
+    if (leaveInProgress) {
+      return;
+    }
+    setLeaveInProgress(true);
+    try {
+      if (!gamepin || !keySafeUsername) {
+        await clearSession();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "GameOptionScreen", params: { username } }],
+        });
+        return;
+      }
+
+      const gameRef = ref(database, `games/${gamepin}`);
+      const snapshot = gameDataOverride
+        ? { exists: () => true, val: () => gameDataOverride }
+        : await get(gameRef);
+
+      if (!snapshot.exists()) {
+        await clearSession();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "GameOptionScreen", params: { username } }],
+        });
+        return;
+      }
+
+      const gameData = snapshot.val() || {};
+      const isStarted = !!gameData.isGameStarted;
+      const playersData = gameData.players || {};
+      const playerKey =
+        Object.prototype.hasOwnProperty.call(playersData, keySafeUsername)
+          ? keySafeUsername
+          : Object.prototype.hasOwnProperty.call(playersData, username)
+          ? username
+          : keySafeUsername;
+
+      if (!isStarted) {
+        const playerRef = ref(
+          database,
+          `games/${gamepin}/players/${playerKey}`,
+        );
+        const traitsRef = ref(
+          database,
+          `games/${gamepin}/traits/${playerKey}`,
+        );
+        await Promise.all([remove(playerRef), remove(traitsRef)]);
+        await update(gameRef, {
+          lastActivityAt: serverTimestamp(),
+        });
+      } else if (playersData[playerKey]) {
+        await update(gameRef, {
+          [`players/${playerKey}/status`]: "left",
+          [`players/${playerKey}/leftAt`]: Date.now(),
+          [`players/${playerKey}/active`]: false,
+          lastActivityAt: serverTimestamp(),
+        });
+      }
+
+      await clearSession();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "GameOptionScreen", params: { username } }],
+      });
+    } catch (error) {
+      console.error("Failed to leave game:", error);
+      showAlert({
+        title: t("Leaving failed"),
+        message: t("We couldn't leave the game right now. Please try again shortly."),
+        variant: "error",
+      });
+      setLeaveInProgress(false);
+      return;
+    }
+    setLeaveInProgress(false);
+  };
+
+  const confirmLeaveGame = async () => {
+    if (leaveInProgress) {
+      return;
+    }
+
+    if (!gamepin || !keySafeUsername) {
+      leaveGame();
+      return;
+    }
+
+    const gameRef = ref(database, `games/${gamepin}`);
+    try {
+      const snapshot = await get(gameRef);
+      if (!snapshot.exists()) {
+        leaveGame();
+        return;
+      }
+
+      const gameData = snapshot.val() || {};
+      if (!gameData.isGameStarted) {
+        leaveGame(gameData);
+        return;
+      }
+
+      if (Platform.OS === "web") {
+        const confirmResult =
+          typeof window !== "undefined"
+            ? window.confirm(
+                t("Leave the game? Your traits stay in play for the others."),
+              )
+            : true;
+        if (confirmResult) {
+          leaveGame(gameData);
+        }
+        return;
+      }
+
+      Alert.alert(
+        t("Leave Game"),
+        t("Are you sure you want to leave the game? Your traits stay in play."),
+        [
+          { text: t("Cancel"), style: "cancel" },
+          {
+            text: t("Leave"),
+            style: "destructive",
+            onPress: () => leaveGame(gameData),
+          },
+        ],
+      );
+    } catch (error) {
+      console.warn("Failed to check game state before leaving:", error);
+      leaveGame();
+    }
+  };
+
   const saveTraits = async () => {
     if (!username) {
       showAlert({
@@ -550,6 +760,9 @@ export default function CardTraits({ navigation, route }) {
           traitsCompleted: true,
         },
       );
+      await update(ref(database, `games/${gamepin}`), {
+        lastActivityAt: serverTimestamp(),
+      });
 
       navigation.navigate("GameLobby", { gamepin, username });
     } catch (error) {
@@ -573,8 +786,13 @@ export default function CardTraits({ navigation, route }) {
       />
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={10} driftY={-14} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-8}
+            driftY={12}
+            delay={500}
+          />
         </View>
 
         <KeyboardAvoidingView
@@ -591,30 +809,50 @@ export default function CardTraits({ navigation, route }) {
             keyboardDismissMode="on-drag"
           >
             <View style={localStyles.scrollInner}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={handleCopyGameCode}
-                style={[
-                  localStyles.pinBadge,
-                  !gamepin && localStyles.pinBadgeDisabled,
-                ]}
-                disabled={!gamepin}
-                accessibilityRole="button"
-                accessibilityLabel={t("Game Code {{code}}", {
-                  code: gamepin || t("unknown"),
-                })}
-              >
-                <Ionicons name="pricetag-outline" size={22} color="#FFE5FF" />
-                <Text style={localStyles.pinBadgeText}>
-                  {t("Game Code {{code}}", { code: gamepin || t("unknown") })}
-                </Text>
-                <Ionicons
-                  name={codeCopied ? "checkmark-circle" : "copy-outline"}
-                  size={18}
-                  color="#FFE5FF"
-                  style={localStyles.pinBadgeCopyIcon}
-                />
-              </TouchableOpacity>
+              <View style={localStyles.headerRow}>
+                <MotionPressable
+                  activeOpacity={0.85}
+                  onPress={handleCopyGameCode}
+                  style={[
+                    localStyles.pinBadge,
+                    !gamepin && localStyles.pinBadgeDisabled,
+                  ]}
+                  disabled={!gamepin}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Game Code {{code}}", {
+                    code: gamepin || t("unknown"),
+                  })}
+                >
+                  <Ionicons
+                    name="pricetag-outline"
+                    size={22}
+                    color="#FFE5FF"
+                    style={localStyles.pinBadgeIcon}
+                  />
+                  <View style={localStyles.pinBadgeTextWrap}>
+                    <Text style={localStyles.pinBadgeLabel}>
+                      {t("Game Code")}
+                    </Text>
+                    <Text style={localStyles.pinBadgeText}>
+                      {gamepin || t("unknown")}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={codeCopied ? "checkmark-circle" : "copy-outline"}
+                    size={18}
+                    color="#FFE5FF"
+                    style={localStyles.pinBadgeCopyIcon}
+                  />
+                </MotionPressable>
+                <MotionPressable
+                  style={localStyles.settingsButton}
+                  onPress={() => setShowSettings(true)}
+                  activeOpacity={0.8}
+                  accessibilityLabel={t("Settings")}
+                >
+                  <Ionicons name="settings-outline" size={20} color="#fff" />
+                </MotionPressable>
+              </View>
 
               <LinearGradient
                 colors={["rgba(255,255,255,0.82)", "rgba(255,255,255,0.58)"]}
@@ -626,9 +864,9 @@ export default function CardTraits({ navigation, route }) {
                   <View style={localStyles.cardHeader}>
                     <View style={localStyles.cardHeaderRow}>
                       <Text style={localStyles.cardTitle}>
-                        {t("Trait Checklist")}
+                        {language === "fi" ? t("Trait Checklist") : t("Trait")}
                       </Text>
-                      <TouchableOpacity
+                      <MotionPressable
                         style={localStyles.guideButton}
                         onPress={() => setGuideVisible(true)}
                         activeOpacity={0.85}
@@ -643,13 +881,8 @@ export default function CardTraits({ navigation, route }) {
                         <Text style={localStyles.guideButtonText}>
                           {t("Trait guide")}
                         </Text>
-                      </TouchableOpacity>
+                      </MotionPressable>
                     </View>
-                    <Text style={localStyles.cardCopy}>
-                      {t(
-                        "List personality traits, habits, or small details that stand out from the crowd.",
-                      )}
-                    </Text>
                   </View>
 
                   <View style={localStyles.groupSection}>
@@ -662,12 +895,9 @@ export default function CardTraits({ navigation, route }) {
                           style={localStyles.groupIcon}
                         />
                         <Text style={localStyles.groupTitlePositive}>
-                          {t("Turn On")}
+                          {language === "fi" ? t("Turn On") : t("Good Traits")}
                         </Text>
                       </View>
-                      <Text style={localStyles.groupSubtitlePositive}>
-                        {t("These three traits capture what excites or attracts you.")}
-                      </Text>
                       {[0, 1, 2].map((index) => {
                         const state = getFieldState(index);
                         const showError =
@@ -700,7 +930,13 @@ export default function CardTraits({ navigation, route }) {
                                 style={localStyles.inputIcon}
                               />
                               <TextInput
-                                style={localStyles.input}
+                                ref={(node) => {
+                                  inputRefs.current[index] = node;
+                                }}
+                                style={[
+                                  localStyles.input,
+                                  { height: inputHeights[index] },
+                                ]}
                                 placeholder={t("Trait {{number}}", {
                                   number: index + 1,
                                 })}
@@ -710,6 +946,11 @@ export default function CardTraits({ navigation, route }) {
                                 }
                                 placeholderTextColor="rgba(45, 16, 42, 0.4)"
                                 returnKeyType="next"
+                                multiline
+                                textAlignVertical="top"
+                                onContentSizeChange={(event) =>
+                                  handleInputSizeChange(index, event)
+                                }
                                 onFocus={() => ensureScrollToField(index)}
                                 onBlur={() =>
                                   setTouchedInputs((current) => ({
@@ -718,7 +959,7 @@ export default function CardTraits({ navigation, route }) {
                                   }))
                                 }
                               />
-                              <TouchableOpacity
+                              <MotionPressable
                                 activeOpacity={0.85}
                                 onPress={() => handleAutoFillSingle(index)}
                                 style={[
@@ -740,7 +981,7 @@ export default function CardTraits({ navigation, route }) {
                                     color="#ffffff"
                                   />
                                 </LinearGradient>
-                              </TouchableOpacity>
+                              </MotionPressable>
                             </View>
                             {errorMessage ? (
                               <Text style={localStyles.inputHelper}>
@@ -761,12 +1002,9 @@ export default function CardTraits({ navigation, route }) {
                           style={localStyles.groupIcon}
                         />
                         <Text style={localStyles.groupTitleNegative}>
-                          {t("Turn Off")}
+                          {language === "fi" ? t("Turn Off") : t("Challenging Traits")}
                         </Text>
                       </View>
-                      <Text style={localStyles.groupSubtitleNegative}>
-                        {t("List traits that do not suit you or that you want to avoid.")}
-                      </Text>
                       {[3, 4, 5].map((index) => {
                         const state = getFieldState(index);
                         const showError =
@@ -799,7 +1037,13 @@ export default function CardTraits({ navigation, route }) {
                                 style={localStyles.inputIcon}
                               />
                               <TextInput
-                                style={localStyles.input}
+                                ref={(node) => {
+                                  inputRefs.current[index] = node;
+                                }}
+                                style={[
+                                  localStyles.input,
+                                  { height: inputHeights[index] },
+                                ]}
                                 placeholder={t("Trait {{number}}", {
                                   number: index + 1,
                                 })}
@@ -811,6 +1055,11 @@ export default function CardTraits({ navigation, route }) {
                                 returnKeyType={
                                   index === TRAIT_COUNT - 1 ? "done" : "next"
                                 }
+                                multiline
+                                textAlignVertical="top"
+                                onContentSizeChange={(event) =>
+                                  handleInputSizeChange(index, event)
+                                }
                                 onFocus={() => ensureScrollToField(index)}
                                 onBlur={() =>
                                   setTouchedInputs((current) => ({
@@ -819,7 +1068,7 @@ export default function CardTraits({ navigation, route }) {
                                   }))
                                 }
                               />
-                              <TouchableOpacity
+                              <MotionPressable
                                 activeOpacity={0.85}
                                 onPress={() => handleAutoFillSingle(index)}
                                 style={[
@@ -841,7 +1090,7 @@ export default function CardTraits({ navigation, route }) {
                                     color="#ffffff"
                                   />
                                 </LinearGradient>
-                              </TouchableOpacity>
+                              </MotionPressable>
                             </View>
                             {errorMessage ? (
                               <Text style={localStyles.inputHelper}>
@@ -879,7 +1128,7 @@ export default function CardTraits({ navigation, route }) {
                     </View>
                   </View>
 
-                  <TouchableOpacity
+                  <MotionPressable
                     activeOpacity={0.92}
                     onPress={saveTraits}
                     style={localStyles.primaryButton}
@@ -899,7 +1148,7 @@ export default function CardTraits({ navigation, route }) {
                         color="#ffffff"
                       />
                     </LinearGradient>
-                  </TouchableOpacity>
+                  </MotionPressable>
 
                   <View style={localStyles.helperBox}>
                     <Ionicons
@@ -921,6 +1170,34 @@ export default function CardTraits({ navigation, route }) {
         </KeyboardAvoidingView>
       </SafeAreaView>
 
+      <SettingsModal
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        onOpenGameRules={() => setShowRules(true)}
+        onOpenPlus={() => {
+          if (isPlus) {
+            return;
+          }
+          setShowSettings(false);
+          setShowPlus(true);
+        }}
+        showLeave
+        onLeave={confirmLeaveGame}
+        isPlus={isPlus}
+      />
+      {!isPlus && (
+        <PlusModal
+          visible={showPlus}
+          onClose={() => setShowPlus(false)}
+          planName={planName}
+          planPrice={planPrice}
+          onRestorePurchases={handleRestorePurchases}
+        />
+      )}
+      <GameRulesModal
+        visible={showRules}
+        onClose={() => setShowRules(false)}
+      />
       <ModalAlert
         visible={alertState.visible}
         title={alertState.title}
@@ -934,100 +1211,166 @@ export default function CardTraits({ navigation, route }) {
         animationType="fade"
         onRequestClose={handleGuideClose}
       >
-        <View style={localStyles.guideOverlay}>
-          <View style={localStyles.guideCard}>
-            <View style={localStyles.guideHeaderRow}>
-              <Text style={localStyles.guideTitle}>{t("Trait guide")}</Text>
-              <TouchableOpacity
-                style={localStyles.guideCloseIcon}
-                onPress={handleGuideClose}
-                accessibilityRole="button"
-              >
-                <Ionicons name="close" size={18} color="#4b2c4f" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={localStyles.guideScroll}
-              contentContainerStyle={localStyles.guideContent}
-              showsVerticalScrollIndicator={false}
+        <View
+          style={[
+            localStyles.guideOverlay,
+            {
+              paddingHorizontal: guideHorizontalPadding,
+              paddingVertical: guideVerticalPadding,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[
+              "rgba(18, 6, 28, 0.92)",
+              "rgba(36, 12, 40, 0.86)",
+              "rgba(18, 6, 28, 0.95)",
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={localStyles.guideOverlayGradient}
+            pointerEvents="none"
+          />
+          <View style={[localStyles.guideCardShell, guideCardShellSize]}>
+            <LinearGradient
+              colors={["rgba(255, 102, 196, 0.6)", "rgba(255, 222, 89, 0.6)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={localStyles.guideCardBorder}
             >
-              <Text style={localStyles.guideIntro}>
-                {t(
-                  "Fill in all six fields about a fictional date partner. Add three good traits and three challenging traits.",
-                )}
-              </Text>
-              <View
-                style={[
-                  localStyles.guideSection,
-                  localStyles.guideSectionPositive,
-                ]}
-              >
-                <Text style={localStyles.guideSectionTitlePositive}>
-                  {t("Good traits (3)")}
-                </Text>
-                <Text style={localStyles.guideSectionText}>
-                  {t(
-                    "Describe the qualities that would make the date feel great.",
-                  )}
-                </Text>
-                <Image
-                  source={guideImages.positive}
-                  style={localStyles.guideImage}
-                  resizeMode="contain"
-                />
-              </View>
-              <View
-                style={[
-                  localStyles.guideSection,
-                  localStyles.guideSectionNegative,
-                ]}
-              >
-                <Text style={localStyles.guideSectionTitleNegative}>
-                  {t("Challenging traits (3)")}
-                </Text>
-                <Text style={localStyles.guideSectionText}>
-                  {t(
-                    "Describe traits you want to avoid or that would make the date tougher.",
-                  )}
-                </Text>
-                <Image
-                  source={guideImages.negative}
-                  style={localStyles.guideImage}
-                  resizeMode="contain"
-                />
-              </View>
-            </ScrollView>
-            <View style={localStyles.guideFooter}>
-              <TouchableOpacity
-                style={localStyles.guideToggleRow}
-                onPress={() => setGuideOptOut((current) => !current)}
-              >
-                <Ionicons
-                  name={guideOptOut ? "checkbox" : "square-outline"}
-                  size={22}
-                  color={guideOptOut ? "#16a34a" : "#6b3a45"}
-                />
-                <Text style={localStyles.guideToggleText}>
-                  {t("Don't show again")}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={localStyles.guideCloseButton}
-                onPress={handleGuideClose}
-                activeOpacity={0.9}
-              >
-                <LinearGradient
-                  colors={["#ff66c4", "#ffde59"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={localStyles.guideCloseButtonGradient}
+              <View style={localStyles.guideCard}>
+                <View
+                  pointerEvents="none"
+                  style={localStyles.guideCardGlow}
                 >
-                  <Text style={localStyles.guideCloseButtonText}>
-                    {t("Close")}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+                  <View style={localStyles.guideGlowPrimary} />
+                  <View style={localStyles.guideGlowSecondary} />
+                </View>
+                <View style={localStyles.guideHeaderRow}>
+                  <View style={localStyles.guideTitleRow}>
+                    <View style={localStyles.guideTitleIcon}>
+                      <Ionicons name="sparkles" size={18} color="#ff66c4" />
+                    </View>
+                    <Text style={localStyles.guideTitle}>{t("Trait guide")}</Text>
+                  </View>
+                  <MotionPressable
+                    style={localStyles.guideCloseIcon}
+                    onPress={handleGuideClose}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="close" size={18} color="#4b2c4f" />
+                  </MotionPressable>
+                </View>
+                <ScrollView
+                  style={localStyles.guideScroll}
+                  contentContainerStyle={localStyles.guideContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={localStyles.guideIntroCard}>
+                    <Text style={localStyles.guideIntro}>
+                      {t(
+                        "Fill in all six fields about a fictional date partner. Add three good traits and three challenging traits.",
+                      )}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      localStyles.guideSection,
+                      localStyles.guideSectionPositive,
+                    ]}
+                  >
+                    <View style={localStyles.guideSectionHeader}>
+                      <View
+                        style={[
+                          localStyles.guideSectionIcon,
+                          localStyles.guideSectionIconPositive,
+                        ]}
+                      >
+                        <Ionicons name="sunny-outline" size={16} color="#166534" />
+                      </View>
+                      <Text style={localStyles.guideSectionTitlePositive}>
+                        {t("Good traits (3)")}
+                      </Text>
+                    </View>
+                    <Text style={localStyles.guideSectionText}>
+                      {t(
+                        "Describe the qualities that would make the date feel great.",
+                      )}
+                    </Text>
+                    <Image
+                      source={guideImages.positive}
+                      style={localStyles.guideImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View
+                    style={[
+                      localStyles.guideSection,
+                      localStyles.guideSectionNegative,
+                    ]}
+                  >
+                    <View style={localStyles.guideSectionHeader}>
+                      <View
+                        style={[
+                          localStyles.guideSectionIcon,
+                          localStyles.guideSectionIconNegative,
+                        ]}
+                      >
+                        <Ionicons
+                          name="alert-circle-outline"
+                          size={16}
+                          color="#991b1b"
+                        />
+                      </View>
+                      <Text style={localStyles.guideSectionTitleNegative}>
+                        {t("Challenging traits (3)")}
+                      </Text>
+                    </View>
+                    <Text style={localStyles.guideSectionText}>
+                      {t(
+                        "Describe traits you want to avoid or that would make the date tougher.",
+                      )}
+                    </Text>
+                    <Image
+                      source={guideImages.negative}
+                      style={localStyles.guideImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={localStyles.guideFooter}>
+                    <MotionPressable
+                      style={localStyles.guideToggleRow}
+                      onPress={() => setGuideOptOut((current) => !current)}
+                    >
+                      <Ionicons
+                        name={guideOptOut ? "checkbox" : "square-outline"}
+                        size={22}
+                        color={guideOptOut ? "#16a34a" : "#6b3a45"}
+                      />
+                      <Text style={localStyles.guideToggleText}>
+                        {t("Don't show again")}
+                      </Text>
+                    </MotionPressable>
+                    <MotionPressable
+                      style={localStyles.guideCloseButton}
+                      onPress={handleGuideClose}
+                      activeOpacity={0.9}
+                    >
+                      <LinearGradient
+                        colors={["#ff66c4", "#ffde59"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={localStyles.guideCloseButtonGradient}
+                      >
+                        <Text style={localStyles.guideCloseButtonText}>
+                          {t("Close")}
+                        </Text>
+                      </LinearGradient>
+                    </MotionPressable>
+                  </View>
+                </ScrollView>
+              </View>
+            </LinearGradient>
           </View>
         </View>
       </Modal>
@@ -1077,22 +1420,53 @@ const localStyles = StyleSheet.create({
     alignSelf: "center",
     alignItems: "center",
   },
+  headerRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  settingsButton: {
+    padding: 10,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    flexShrink: 0,
+  },
   pinBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.22)",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 26,
-    marginBottom: 20,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    marginRight: 12,
   },
   pinBadgeDisabled: {
     opacity: 0.6,
   },
-  pinBadgeText: {
-    marginLeft: 10,
-    fontSize: 22,
+  pinBadgeIcon: {
+    marginRight: 10,
+  },
+  pinBadgeTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pinBadgeLabel: {
+    fontSize: 11,
     fontWeight: "700",
+    letterSpacing: 0.6,
+    color: "rgba(255, 255, 255, 0.78)",
+  },
+  pinBadgeText: {
+    marginTop: 2,
+    fontSize: 20,
+    fontWeight: "800",
     color: "#ffffff",
     letterSpacing: 0.8,
   },
@@ -1340,28 +1714,87 @@ const localStyles = StyleSheet.create({
   },
   guideOverlay: {
     flex: 1,
-    backgroundColor: "rgba(20, 8, 30, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    position: "relative",
+    backgroundColor: "rgba(18, 6, 28, 0.75)",
   },
-  guideCard: {
+  guideOverlayGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  guideCardShell: {
     width: "100%",
     maxWidth: 520,
     maxHeight: "90%",
-    backgroundColor: "rgba(255, 255, 255, 0.97)",
+    borderRadius: 28,
+    flexShrink: 1,
+    shadowColor: "#14031E",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  guideCardBorder: {
+    borderRadius: 28,
+    padding: 2,
+    height: "100%",
+  },
+  guideCard: {
     borderRadius: 26,
-    padding: 20,
-    shadowColor: "#11022C",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.25,
-    shadowRadius: 22,
-    elevation: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.98)",
+    padding: 18,
+    height: "100%",
+    position: "relative",
+    overflow: "hidden",
+    minHeight: 0,
+  },
+  guideCardGlow: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  guideGlowPrimary: {
+    position: "absolute",
+    top: -90,
+    right: -70,
+    width: 200,
+    height: 200,
+    borderRadius: 200,
+    backgroundColor: "rgba(255, 222, 89, 0.22)",
+  },
+  guideGlowSecondary: {
+    position: "absolute",
+    bottom: -100,
+    left: -70,
+    width: 220,
+    height: 220,
+    borderRadius: 220,
+    backgroundColor: "rgba(255, 102, 196, 0.18)",
   },
   guideHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 102, 196, 0.22)",
+    backgroundColor: "rgba(255, 102, 196, 0.12)",
+  },
+  guideTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  guideTitleIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 102, 196, 0.35)",
+    marginRight: 10,
   },
   guideTitle: {
     fontSize: 20,
@@ -1374,23 +1807,34 @@ const localStyles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(45, 16, 42, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(45, 16, 42, 0.12)",
   },
   guideScroll: {
-    marginTop: 10,
+    marginTop: 12,
+    flex: 1,
+    minHeight: 0,
   },
   guideContent: {
-    paddingBottom: 4,
+    paddingBottom: 24,
+  },
+  guideIntroCard: {
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(92, 79, 132, 0.16)",
+    backgroundColor: "rgba(92, 79, 132, 0.08)",
   },
   guideIntro: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#5C4F84",
+    fontSize: 13,
+    lineHeight: 20,
+    color: "#4b3f73",
   },
   guideSection: {
     marginTop: 16,
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
   },
   guideSectionPositive: {
@@ -1401,57 +1845,101 @@ const localStyles = StyleSheet.create({
     backgroundColor: "rgba(254, 202, 202, 0.35)",
     borderColor: "rgba(239, 68, 68, 0.28)",
   },
+  guideSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  guideSectionIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    borderWidth: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+  },
+  guideSectionIconPositive: {
+    borderColor: "rgba(22, 163, 74, 0.35)",
+    backgroundColor: "rgba(22, 163, 74, 0.12)",
+  },
+  guideSectionIconNegative: {
+    borderColor: "rgba(220, 38, 38, 0.35)",
+    backgroundColor: "rgba(220, 38, 38, 0.12)",
+  },
   guideSectionTitlePositive: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#166534",
   },
   guideSectionTitleNegative: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#991b1b",
   },
   guideSectionText: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 13,
     lineHeight: 19,
-    color: "#5C4F84",
+    color: "#4b3f73",
   },
   guideImage: {
     marginTop: 12,
     width: "100%",
-    height: 140,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.7)",
+    height: 150,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(45, 16, 42, 0.08)",
+    shadowColor: "#14031E",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
   },
   guideFooter: {
     marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(92, 79, 132, 0.12)",
   },
   guideToggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(92, 79, 132, 0.16)",
+    backgroundColor: "rgba(92, 79, 132, 0.08)",
   },
   guideToggleText: {
     marginLeft: 10,
     fontSize: 14,
+    fontWeight: "600",
     color: "#4b2c4f",
     flex: 1,
   },
   guideCloseButton: {
-    marginTop: 10,
+    marginTop: 12,
     borderRadius: 16,
     overflow: "hidden",
+    shadowColor: "#14031E",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
   guideCloseButtonGradient: {
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     alignItems: "center",
   },
   guideCloseButtonText: {
     fontSize: 16,
     fontWeight: "700",
     color: "#ffffff",
+    letterSpacing: 0.2,
   },
 });
 

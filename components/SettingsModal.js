@@ -2,7 +2,6 @@ import React from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   Modal,
   StyleSheet,
 } from "react-native";
@@ -11,11 +10,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../contexts/LanguageContext";
 import LanguageToggle from "./LanguageToggle";
 import theme from "../utils/theme";
+import MotionPressable from "./MotionPressable";
 
 export default function SettingsModal({
   visible,
   onClose,
   onOpenPlus,
+  onOpenGameRules,
   showLeave = false,
   onLeave,
   isPlus = false,
@@ -24,6 +25,15 @@ export default function SettingsModal({
   const isPlusMember = Boolean(isPlus);
   const plusLabel = isPlusMember ? t("Plus member") : t("Open Plus");
   const plusIcon = isPlusMember ? "checkmark-circle" : "sparkles-outline";
+
+  const handleOpenGameRules = () => {
+    if (typeof onOpenGameRules === "function") {
+      onClose && onClose();
+      onOpenGameRules();
+      return;
+    }
+    onClose && onClose();
+  };
 
   return (
     <Modal
@@ -36,9 +46,9 @@ export default function SettingsModal({
         <View style={styles.modalPanel}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("Settings")}</Text>
-            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
+            <MotionPressable style={styles.modalCloseButton} onPress={onClose}>
               <Ionicons name="close" size={22} color={theme.helperText} />
-            </TouchableOpacity>
+            </MotionPressable>
           </View>
           <View style={styles.modalBody}>
             <View style={styles.settingsRow}>
@@ -46,8 +56,22 @@ export default function SettingsModal({
               <LanguageToggle />
             </View>
 
+            <MotionPressable
+              activeOpacity={0.9}
+              style={styles.howToPlayButton}
+              onPress={handleOpenGameRules}
+            >
+              <Ionicons
+                name="help-circle-outline"
+                size={18}
+                color={theme.metaLabel}
+                style={styles.howToPlayIcon}
+              />
+              <Text style={styles.howToPlayText}>{t("How to play")}</Text>
+            </MotionPressable>
+
             {showLeave && (
-              <TouchableOpacity
+              <MotionPressable
                 activeOpacity={0.85}
                 style={styles.leaveButton}
                 onPress={onLeave}
@@ -58,11 +82,11 @@ export default function SettingsModal({
                   color="#ffffff"
                   style={styles.leaveIcon}
                 />
-                <Text style={styles.leaveText}>{t("Leave game")}</Text>
-              </TouchableOpacity>
+                <Text style={styles.leaveText}>{t("Leave Game")}</Text>
+              </MotionPressable>
             )}
 
-            <TouchableOpacity
+            <MotionPressable
               activeOpacity={0.9}
               style={[
                 styles.settingsPrimary,
@@ -85,9 +109,10 @@ export default function SettingsModal({
                 />
                 <Text style={styles.settingsPrimaryText}>{plusLabel}</Text>
               </LinearGradient>
-            </TouchableOpacity>
+            </MotionPressable>
           </View>
         </View>
+
       </View>
     </Modal>
   );
@@ -169,6 +194,26 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "700",
+  },
+  howToPlayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: theme.accentMuted,
+    borderWidth: 1,
+    borderColor: theme.accentMutedBorder,
+    marginBottom: 12,
+  },
+  howToPlayIcon: {
+    marginRight: 8,
+  },
+  howToPlayText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.metaLabel,
   },
   leaveButton: {
     flexDirection: "row",

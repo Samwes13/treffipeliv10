@@ -1,7 +1,8 @@
 import React from "react";
-import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useLanguage, LANGUAGE_OPTIONS } from "../contexts/LanguageContext";
 import theme from "../utils/theme";
+import MotionPressable from "./MotionPressable";
 
 export default function LanguageToggle({ style }) {
   const { language, setLanguage } = useLanguage();
@@ -11,7 +12,7 @@ export default function LanguageToggle({ style }) {
       {LANGUAGE_OPTIONS.map((option, index) => {
         const isActive = language === option.code;
         return (
-          <TouchableOpacity
+          <MotionPressable
             key={option.code}
             style={[
               styles.button,
@@ -27,7 +28,7 @@ export default function LanguageToggle({ style }) {
             >
               {option.label}
             </Text>
-          </TouchableOpacity>
+          </MotionPressable>
         );
       })}
     </View>

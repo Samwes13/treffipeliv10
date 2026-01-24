@@ -2,10 +2,16 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import translationMap from "../localization/translations";
+import {
+  loadLanguagePreference,
+  saveLanguagePreference,
+} from "../utils/languagePreference";
 
 const DEFAULT_LANGUAGE = "en";
 
@@ -49,13 +55,36 @@ const translateValue = (language, key, variables) => {
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
+  const userOverrideRef = useRef(false);
+
+  useEffect(() => {
+    let isActive = true;
+    const loadLanguage = async () => {
+      const storedLanguage = await loadLanguagePreference();
+      if (!isActive || userOverrideRef.current) {
+        return;
+      }
+      if (storedLanguage === "fi") {
+        setLanguage("fi");
+      } else if (storedLanguage === DEFAULT_LANGUAGE) {
+        setLanguage(DEFAULT_LANGUAGE);
+      }
+    };
+    loadLanguage();
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const safeSetLanguage = useCallback((nextLanguage) => {
+    userOverrideRef.current = true;
     if (nextLanguage === "fi") {
       setLanguage("fi");
+      saveLanguagePreference("fi");
       return;
     }
     setLanguage(DEFAULT_LANGUAGE);
+    saveLanguagePreference(DEFAULT_LANGUAGE);
   }, []);
 
   const value = useMemo(

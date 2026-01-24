@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Image,
   Platform,
@@ -13,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ref, update, remove, get, runTransaction } from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
+import theme from "../utils/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -22,6 +22,8 @@ import getLogoSource from "../utils/logo";
 import useInterstitialAd from "../hooks/useInterstitialAd";
 import { clearSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
 //import AdSenseBanner from './AdSenseBanner'; // Tuo AdSense-komponentti
 
 let WebBannerAd = null;
@@ -55,9 +57,7 @@ export default function GameEnd({ route, navigation }) {
   const skipLeaders = useMemo(() => {
     const sorted = [...players].sort(
       (a, b) =>
-        b.skipCount - a.skipCount ||
-        b.accepted - a.accepted ||
-        a.username.localeCompare(b.username),
+        b.skipCount - a.skipCount || a.username.localeCompare(b.username),
     );
     return sorted;
   }, [players]);
@@ -72,24 +72,36 @@ export default function GameEnd({ route, navigation }) {
   const highlightStats = useMemo(
     () => [
       {
-        key: "players",
-        label: t("Players"),
-        value: String(players.length),
-        icon: "people-outline",
-      },
-      {
         key: "winning",
         label: t("Winning date"),
         value: champion
           ? t("Date {{number}}", { number: champion.treffit })
           : "\u2014",
         icon: "trophy-outline",
+        accent: "#FFD166",
+        gradient: ["rgba(255, 249, 235, 0.98)", "rgba(255, 233, 218, 0.92)"],
+        borderColor: "rgba(255, 209, 102, 0.45)",
+        iconBackground: "rgba(255, 209, 102, 0.25)",
+      },
+      {
+        key: "players",
+        label: t("Players"),
+        value: String(players.length),
+        icon: "people-outline",
+        accent: "#8DD9FF",
+        gradient: ["rgba(236, 248, 255, 0.98)", "rgba(226, 236, 255, 0.92)"],
+        borderColor: "rgba(141, 217, 255, 0.45)",
+        iconBackground: "rgba(141, 217, 255, 0.25)",
       },
       {
         key: "matches",
         label: t("Total matches"),
         value: String(totalMatchedTraits),
         icon: "sparkles-outline",
+        accent: "#FF7EC8",
+        gradient: ["rgba(255, 236, 246, 0.98)", "rgba(255, 225, 240, 0.92)"],
+        borderColor: "rgba(255, 126, 200, 0.45)",
+        iconBackground: "rgba(255, 126, 200, 0.25)",
       },
     ],
     [players.length, champion?.treffit, totalMatchedTraits, t],
@@ -176,17 +188,35 @@ export default function GameEnd({ route, navigation }) {
         const playersVal = playersSnap.exists() ? playersSnap.val() : {};
         const arr = Object.keys(playersVal).map((key) => {
           const p = playersVal[key] || {};
-          const accepted = Array.isArray(p.acceptedTraits)
+          const acceptedTraitsCount = Array.isArray(p.acceptedTraits)
             ? p.acceptedTraits.length
             : 0;
-          // Dates played are equivalent to accepted traits, capped to max 6 rounds.
-          const treffit = Math.min(accepted, 6);
-          const skipCount = Number(p.skipCount || 0);
+          const keepCount =
+            p.keepCount === undefined || p.keepCount === null
+              ? null
+              : Number(p.keepCount);
+          const accepted = Number.isFinite(keepCount)
+            ? keepCount
+            : acceptedTraitsCount;
+          const maxAcceptedRaw =
+            p.maxAccepted === undefined || p.maxAccepted === null
+              ? 0
+              : Number(p.maxAccepted);
+          const maxAccepted = Math.max(
+            Number.isFinite(maxAcceptedRaw) ? maxAcceptedRaw : 0,
+            acceptedTraitsCount,
+          );
+          // Date numbering is 1-based, so add 1 to the accepted streak.
+          const treffit = Math.min(maxAccepted + 1, 6);
+          const skipCount = Number.isFinite(Number(p.skipCount))
+            ? Number(p.skipCount)
+            : 0;
           return {
             username: p.username || key,
             accepted,
             treffit,
             skipCount,
+            maxAccepted,
           };
         });
         setPlayers(arr);
@@ -282,8 +312,13 @@ export default function GameEnd({ route, navigation }) {
       />
       <SafeAreaView style={ge.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={ge.decorativeLayer}>
-          <View style={ge.blobTop} />
-          <View style={ge.blobBottom} />
+          <MotionFloat style={ge.blobTop} driftX={9} driftY={-13} />
+          <MotionFloat
+            style={ge.blobBottom}
+            driftX={-7}
+            driftY={11}
+            delay={450}
+          />
         </View>
         <ScrollView
           style={ge.scroll}
@@ -296,7 +331,7 @@ export default function GameEnd({ route, navigation }) {
           />
           <View style={ge.heroCard}>
             <LinearGradient
-              colors={["rgba(255,255,255,0.16)", "rgba(255,255,255,0.05)"]}
+              colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 232, 244, 0.9)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={ge.heroGradient}
@@ -308,7 +343,9 @@ export default function GameEnd({ route, navigation }) {
                   color="#FFD700"
                 />
               </View>
-              <Text style={ge.heroEyebrow}>{t("Game finished")}</Text>
+              <View style={ge.heroBadge}>
+                <Text style={ge.heroEyebrow}>{t("Game finished")}</Text>
+              </View>
               <Text style={ge.heroTitle}>{heroTitle}</Text>
               <Text style={ge.heroSubtitle}>{heroSubtitle}</Text>
               {champion ? (
@@ -316,7 +353,7 @@ export default function GameEnd({ route, navigation }) {
                   <Ionicons
                     name="ribbon-outline"
                     size={18}
-                    color="#F8ECFF"
+                    color={theme.accentPrimary}
                     style={ge.heroMetaIcon}
                   />
                   <Text style={ge.heroMetaText}>{heroMetaText}</Text>
@@ -326,15 +363,48 @@ export default function GameEnd({ route, navigation }) {
           </View>
 
           <View style={ge.statsGrid}>
-            {highlightStats.map((stat) => (
-              <View key={stat.key} style={ge.statCard}>
-                <View style={ge.statIconWrap}>
-                  <Ionicons name={stat.icon} size={18} color="#F8ECFF" />
+            {highlightStats.map((stat) => {
+              const isWide = stat.key === "winning";
+              return (
+              <LinearGradient
+                key={stat.key}
+                colors={stat.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  ge.statCard,
+                  isWide && ge.statCardWide,
+                  { borderColor: stat.borderColor },
+                ]}
+              >
+                <View
+                  style={[
+                    ge.statIconWrap,
+                    {
+                      backgroundColor: stat.iconBackground,
+                      borderColor: stat.borderColor,
+                    },
+                  ]}
+                >
+                  <Ionicons name={stat.icon} size={18} color={stat.accent} />
                 </View>
-                <Text style={ge.statValue}>{stat.value}</Text>
-                <Text style={ge.statLabel}>{stat.label}</Text>
-              </View>
-            ))}
+                <Text
+                  style={[ge.statValue, isWide && ge.statValueWide]}
+                  numberOfLines={1}
+                >
+                  {stat.value}
+                </Text>
+                <Text
+                  style={[ge.statLabel, isWide && ge.statLabelWide]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {stat.label}
+                </Text>
+              </LinearGradient>
+              );
+            })}
           </View>
 
           <View style={ge.leaderboardCard}>
@@ -343,7 +413,7 @@ export default function GameEnd({ route, navigation }) {
                 <Ionicons
                   name="podium-outline"
                   size={18}
-                  color="#F8ECFF"
+                  color={theme.accentPrimary}
                   style={{ marginRight: 8 }}
                 />
                 <Text style={ge.sectionLabel}>{t("Longest Dates")}</Text>
@@ -365,54 +435,78 @@ export default function GameEnd({ route, navigation }) {
               longestLeaders.map((player, index) => {
                 const matchLabel =
                   player.accepted === 1 ? t("match") : t("matches");
-                const isChampion = index === 0;
+                const rank = index + 1;
+                const isGold = rank === 1;
+                const isSilver = rank === 2;
+                const isBronze = rank === 3;
                 return (
                   <View
                     key={`${player.username}-longest-${index}`}
                     style={[
                       ge.leaderRow,
-                      isChampion ? ge.leaderRowChampion : null,
+                      (isGold || isSilver || isBronze) && ge.leaderRowTop,
+                      isGold && ge.leaderRowChampion,
+                      isSilver && ge.leaderRowSilver,
+                      isBronze && ge.leaderRowBronze,
                     ]}
                   >
                     <View
                       style={[
                         ge.rankBadge,
-                        isChampion ? ge.rankBadgeChampion : null,
+                        isGold && ge.rankBadgeChampion,
+                        isSilver && ge.rankBadgeSilver,
+                        isBronze && ge.rankBadgeBronze,
                       ]}
                     >
                       <Text
                         style={[
                           ge.rankText,
-                          isChampion ? ge.rankTextChampion : null,
+                          isGold && ge.rankTextChampion,
+                          isSilver && ge.rankTextSilver,
+                          isBronze && ge.rankTextBronze,
                         ]}
                       >
-                        #{index + 1}
+                        #{rank}
                       </Text>
                     </View>
                     <View style={ge.leaderInfo}>
                       <Text
                         style={[
                           ge.leaderName,
-                          isChampion ? ge.leaderNameChampion : null,
+                          isGold && ge.leaderNameChampion,
+                          isSilver && ge.leaderNameSilver,
+                          isBronze && ge.leaderNameBronze,
                         ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                       >
                         {player.username}
                       </Text>
-                      <Text style={ge.leaderMeta}>
+                      <Text
+                        style={ge.leaderMeta}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
                         {player.accepted || 0} {matchLabel}
                       </Text>
                     </View>
                     <View
                       style={[
                         ge.scorePill,
-                        isChampion ? ge.scorePillChampion : null,
+                        isGold && ge.scorePillChampion,
+                        isSilver && ge.scorePillSilver,
+                        isBronze && ge.scorePillBronze,
                       ]}
                     >
                       <Text
                         style={[
                           ge.scoreText,
-                          isChampion ? ge.scoreTextChampion : null,
+                          isGold && ge.scoreTextChampion,
+                          isSilver && ge.scoreTextSilver,
+                          isBronze && ge.scoreTextBronze,
                         ]}
+                        numberOfLines={1}
+                        ellipsizeMode="clip"
                       >
                         {t("Date {{number}}", { number: player.treffit })}
                       </Text>
@@ -425,7 +519,7 @@ export default function GameEnd({ route, navigation }) {
                 <Ionicons
                   name="sparkles-outline"
                   size={22}
-                  color="rgba(255,255,255,0.6)"
+                  color={theme.helperText}
                   style={{ marginBottom: 10 }}
                 />
                 <Text style={ge.emptyState}>
@@ -443,7 +537,7 @@ export default function GameEnd({ route, navigation }) {
                 <Ionicons
                   name="close-circle-outline"
                   size={18}
-                  color="#F8ECFF"
+                  color={theme.accentPrimary}
                   style={{ marginRight: 8 }}
                 />
                 <Text style={ge.sectionLabel}>{t("Most Skips")}</Text>
@@ -454,56 +548,71 @@ export default function GameEnd({ route, navigation }) {
               skipLeaders.map((player, index) => {
                 const skipLabel =
                   player.skipCount === 1 ? t("skip") : t("skips");
-                const isTopSkipper = index === 0 && player.skipCount > 0;
+                const rank = index + 1;
+                const isGold = rank === 1;
+                const isSilver = rank === 2;
+                const isBronze = rank === 3;
                 return (
                   <View
                     key={`${player.username}-skips-${index}`}
                     style={[
                       ge.leaderRow,
-                      isTopSkipper ? ge.leaderRowChampion : null,
+                      (isGold || isSilver || isBronze) && ge.leaderRowTop,
+                      isGold && ge.leaderRowChampion,
+                      isSilver && ge.leaderRowSilver,
+                      isBronze && ge.leaderRowBronze,
                     ]}
                   >
                     <View
                       style={[
                         ge.rankBadge,
-                        isTopSkipper ? ge.rankBadgeChampion : null,
+                        isGold && ge.rankBadgeChampion,
+                        isSilver && ge.rankBadgeSilver,
+                        isBronze && ge.rankBadgeBronze,
                       ]}
                     >
                       <Text
                         style={[
                           ge.rankText,
-                          isTopSkipper ? ge.rankTextChampion : null,
+                          isGold && ge.rankTextChampion,
+                          isSilver && ge.rankTextSilver,
+                          isBronze && ge.rankTextBronze,
                         ]}
                       >
-                        #{index + 1}
+                        #{rank}
                       </Text>
                     </View>
                     <View style={ge.leaderInfo}>
                       <Text
                         style={[
                           ge.leaderName,
-                          isTopSkipper ? ge.leaderNameChampion : null,
+                          isGold && ge.leaderNameChampion,
+                          isSilver && ge.leaderNameSilver,
+                          isBronze && ge.leaderNameBronze,
                         ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                       >
                         {player.username}
-                      </Text>
-                      <Text style={ge.leaderMeta}>
-                        {t("Longest date {{number}}", {
-                          number: player.treffit,
-                        })}
                       </Text>
                     </View>
                     <View
                       style={[
                         ge.scorePill,
-                        isTopSkipper ? ge.scorePillChampion : null,
+                        isGold && ge.scorePillChampion,
+                        isSilver && ge.scorePillSilver,
+                        isBronze && ge.scorePillBronze,
                       ]}
                     >
                       <Text
                         style={[
                           ge.scoreText,
-                          isTopSkipper ? ge.scoreTextChampion : null,
+                          isGold && ge.scoreTextChampion,
+                          isSilver && ge.scoreTextSilver,
+                          isBronze && ge.scoreTextBronze,
                         ]}
+                        numberOfLines={1}
+                        ellipsizeMode="clip"
                       >
                         {player.skipCount} {skipLabel}
                       </Text>
@@ -516,7 +625,7 @@ export default function GameEnd({ route, navigation }) {
                 <Ionicons
                   name="hourglass-outline"
                   size={22}
-                  color="rgba(255,255,255,0.6)"
+                  color={theme.helperText}
                   style={{ marginBottom: 10 }}
                 />
                 <Text style={ge.emptyState}>
@@ -535,7 +644,7 @@ export default function GameEnd({ route, navigation }) {
           ) : null}
 
           <View style={ge.actionsRow}>
-            <TouchableOpacity
+            <MotionPressable
               activeOpacity={0.9}
               onPress={handleReplay}
               style={ge.actionButton}
@@ -554,8 +663,8 @@ export default function GameEnd({ route, navigation }) {
                 />
                 <Text style={ge.actionText}>{t("Play again")}</Text>
               </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </MotionPressable>
+            <MotionPressable
               activeOpacity={0.9}
               onPress={handleExit}
               style={[ge.actionButton, ge.secondaryActionButton]}
@@ -574,7 +683,7 @@ export default function GameEnd({ route, navigation }) {
                 />
                 <Text style={ge.actionText}>{t("Back to lobby")}</Text>
               </LinearGradient>
-            </TouchableOpacity>
+            </MotionPressable>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -635,6 +744,8 @@ const ge = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 26,
     elevation: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.25)",
   },
   heroGradient: {
     paddingVertical: 28,
@@ -646,36 +757,46 @@ const ge = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     backgroundColor: "rgba(255, 215, 0, 0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.4)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
   },
+  heroBadge: {
+    backgroundColor: "rgba(255, 145, 77, 0.16)",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.35)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
   heroEyebrow: {
-    color: "rgba(255,255,255,0.75)",
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 1.2,
+    color: theme.metaLabel,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.1,
     textTransform: "uppercase",
-    marginBottom: 6,
   },
   heroTitle: {
-    color: "#FFFFFF",
-    fontSize: 26,
-    fontWeight: "700",
+    color: theme.bodyText,
+    fontSize: 28,
+    fontWeight: "800",
     textAlign: "center",
   },
   heroSubtitle: {
     marginTop: 10,
-    color: "rgba(255,255,255,0.85)",
+    color: theme.bodyMuted,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 23,
     textAlign: "center",
   },
   heroMetaRow: {
     marginTop: 16,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255, 145, 77, 0.14)",
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -684,7 +805,7 @@ const ge = StyleSheet.create({
     marginRight: 8,
   },
   heroMetaText: {
-    color: "#F8ECFF",
+    color: theme.bodyText,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -692,49 +813,75 @@ const ge = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "center",
-    marginBottom: 24,
-    marginHorizontal: -8,
+    justifyContent: "space-between",
+    alignItems: "stretch",
+    marginBottom: 26,
+    marginHorizontal: -6,
   },
   statCard: {
-    minWidth: 120,
-    flexBasis: "30%",
-    marginHorizontal: 8,
-    marginBottom: 16,
-    paddingVertical: 16,
+    flexBasis: "32%",
+    minWidth: 128,
+    marginHorizontal: 6,
+    marginBottom: 14,
+    paddingVertical: 18,
     paddingHorizontal: 14,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 20,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.2)",
+    shadowColor: "rgba(76, 19, 58, 0.18)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 7,
+  },
+  statCardWide: {
+    flexBasis: "100%",
+    minWidth: "100%",
+    marginHorizontal: 0,
+    paddingVertical: 20,
   },
   statIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.7)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.2)",
   },
   statValue: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "700",
+    color: theme.bodyText,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  statValueWide: {
+    fontSize: 26,
   },
   statLabel: {
-    marginTop: 4,
-    color: "rgba(255,255,255,0.7)",
+    marginTop: 6,
+    color: theme.metaLabel,
     fontSize: 12,
-    letterSpacing: 0.6,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    lineHeight: 16,
     textAlign: "center",
+    textTransform: "uppercase",
+    flexShrink: 1,
+  },
+  statLabelWide: {
+    letterSpacing: 1,
   },
   leaderboardCard: {
     width: "100%",
     borderRadius: 24,
     padding: 20,
-    backgroundColor: "rgba(18,22,71,0.58)",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    borderColor: "rgba(255, 145, 77, 0.2)",
     marginBottom: 26,
   },
   leaderboardSecondary: {
@@ -751,20 +898,22 @@ const ge = StyleSheet.create({
     alignItems: "center",
   },
   sectionLabel: {
-    color: "#FFFFFF",
+    color: theme.bodyText,
     fontSize: 18,
     fontWeight: "700",
   },
   sectionChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,215,0,0.22)",
+    backgroundColor: "rgba(255, 209, 102, 0.28)",
     borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 209, 102, 0.45)",
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
   sectionChipText: {
-    color: "#FFD700",
+    color: theme.badgeText,
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -775,66 +924,124 @@ const ge = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 14,
     paddingHorizontal: 14,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255, 239, 248, 0.92)",
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.2)",
+  },
+  leaderRowTop: {
+    paddingVertical: 16,
+    shadowColor: "rgba(76, 19, 58, 0.18)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    elevation: 9,
   },
   leaderRowChampion: {
-    backgroundColor: "rgba(255,215,0,0.16)",
+    backgroundColor: "rgba(255, 209, 102, 0.25)",
     borderWidth: 1,
-    borderColor: "rgba(255,215,0,0.35)",
+    borderColor: "rgba(255, 209, 102, 0.45)",
+  },
+  leaderRowSilver: {
+    backgroundColor: "rgba(226, 232, 240, 0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.45)",
+  },
+  leaderRowBronze: {
+    backgroundColor: "rgba(255, 203, 164, 0.3)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 185, 133, 0.5)",
   },
   rankBadge: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255, 145, 77, 0.16)",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
   },
   rankBadgeChampion: {
-    backgroundColor: "rgba(255,215,0,0.32)",
+    backgroundColor: "rgba(255, 209, 102, 0.35)",
+  },
+  rankBadgeSilver: {
+    backgroundColor: "rgba(226, 232, 240, 0.65)",
+  },
+  rankBadgeBronze: {
+    backgroundColor: "rgba(255, 203, 164, 0.4)",
   },
   rankText: {
-    color: "#FFFFFF",
+    color: theme.bodyText,
     fontSize: 16,
     fontWeight: "700",
   },
   rankTextChampion: {
-    color: "#2b1a00",
+    color: "#7c2d12",
+  },
+  rankTextSilver: {
+    color: "#334155",
+  },
+  rankTextBronze: {
+    color: "#9a3412",
   },
   leaderInfo: {
     flex: 1,
+    minWidth: 0,
   },
   leaderName: {
-    color: "#FFFFFF",
+    color: theme.bodyText,
     fontSize: 16,
     fontWeight: "600",
   },
   leaderNameChampion: {
-    color: "#FFD700",
+    color: "#9a3412",
+  },
+  leaderNameSilver: {
+    color: "#475569",
+  },
+  leaderNameBronze: {
+    color: "#b45309",
   },
   leaderMeta: {
-    color: "rgba(255,255,255,0.7)",
+    color: theme.bodyMuted,
     fontSize: 13,
     marginTop: 2,
+    lineHeight: 18,
   },
   scorePill: {
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255, 145, 77, 0.16)",
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.3)",
+    flexShrink: 0,
   },
   scorePillChampion: {
-    backgroundColor: "rgba(255,215,0,0.28)",
+    backgroundColor: "rgba(255, 209, 102, 0.28)",
+    borderColor: "rgba(255, 209, 102, 0.45)",
+  },
+  scorePillSilver: {
+    backgroundColor: "rgba(226, 232, 240, 0.6)",
+    borderColor: "rgba(148, 163, 184, 0.4)",
+  },
+  scorePillBronze: {
+    backgroundColor: "rgba(255, 203, 164, 0.45)",
+    borderColor: "rgba(255, 185, 133, 0.45)",
   },
   scoreText: {
-    color: "#FFFFFF",
+    color: theme.metaLabel,
     fontSize: 14,
     fontWeight: "700",
   },
   scoreTextChampion: {
-    color: "#2b1a00",
+    color: "#7c2d12",
+  },
+  scoreTextSilver: {
+    color: "#334155",
+  },
+  scoreTextBronze: {
+    color: "#9a3412",
   },
   emptyStateWrap: {
     alignItems: "center",
@@ -842,7 +1049,7 @@ const ge = StyleSheet.create({
     paddingHorizontal: 12,
   },
   emptyState: {
-    color: "rgba(255,255,255,0.72)",
+    color: theme.bodyMuted,
     fontSize: 14,
     textAlign: "center",
   },
@@ -878,6 +1085,7 @@ const ge = StyleSheet.create({
     shadowOpacity: 0.5,
   },
   actionButtonGradient: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

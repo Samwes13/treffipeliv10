@@ -1,8 +1,9 @@
 import React from "react";
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Modal, View, Text, StyleSheet } from "react-native";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../contexts/LanguageContext";
+import MotionPressable from "./MotionPressable";
 
 export default function ModalAlert({
   visible,
@@ -29,19 +30,22 @@ export default function ModalAlert({
     return (
       <View style={ca.actions}>
         {btns.map((b, i) => (
-          <TouchableOpacity
+          <MotionPressable
             key={i}
             style={[styles.modalButton, ca.button]}
             onPress={() => {
+              const shouldClose = b.closeOnPress !== false;
               try {
                 b.onPress && b.onPress();
               } finally {
-                onClose && onClose();
+                if (shouldClose) {
+                  onClose && onClose();
+                }
               }
             }}
           >
             <Text style={styles.modalButtonText}>{b.text || t("OK")}</Text>
-          </TouchableOpacity>
+          </MotionPressable>
         ))}
       </View>
     );

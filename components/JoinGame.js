@@ -3,15 +3,23 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
   Image,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ref, get, set, child } from "firebase/database";
+import {
+  ref,
+  get,
+  set,
+  child,
+  update,
+  remove,
+  serverTimestamp,
+} from "firebase/database";
 import { database } from "../firebaseConfig";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,6 +30,10 @@ import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
 import { saveSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
+import { isGameInactive } from "../utils/gameActivity";
+import { loadHowToPlayHidden } from "../utils/howToPlayPreference";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
 
 const PIN_LENGTH = 6;
 
@@ -31,6 +43,8 @@ export default function JoinGame({ navigation, route }) {
   const { t, language } = useLanguage();
   const { isPlus } = usePlus();
   const logoSource = getLogoSource(language);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 360;
 
   const [pincode, setPincode] = useState("");
   const [isChecking, setIsChecking] = useState(false);
@@ -77,6 +91,15 @@ export default function JoinGame({ navigation, route }) {
     return true;
   };
 
+  const navigateToTraits = async (params) => {
+    const hidden = await loadHowToPlayHidden();
+    if (hidden) {
+      navigation.navigate("CardTraits", params);
+      return;
+    }
+    navigation.navigate("HowToPlay", params);
+  };
+
   const handleJoinGame = async () => {
     if (!ensureUsername()) {
       return;
@@ -109,6 +132,22 @@ export default function JoinGame({ navigation, route }) {
       }
 
       const gameData = gameSnapshot.val() || {};
+      if (isGameInactive(gameData.lastActivityAt)) {
+        try {
+          await remove(ref(database, `games/${formattedPin}`));
+        } catch (error) {
+          console.warn(
+            "Failed to remove inactive game:",
+            error?.message || error,
+          );
+        }
+        showAlert({
+          title: t("Game Code Not Found"),
+          message: t("Make sure the code is correct and try again."),
+          variant: "error",
+        });
+        return;
+      }
       const players = gameData.players || {};
       const normalizedDesired = username.trim().toLowerCase();
       const usernameKey = toUserKey(username);
@@ -147,9 +186,13 @@ export default function JoinGame({ navigation, route }) {
         isPlus: !!isPlus,
       });
 
+      await update(ref(database, `games/${formattedPin}`), {
+        lastActivityAt: serverTimestamp(),
+      });
+
       await saveSession(username, formattedPin);
 
-      navigation.navigate("CardTraits", { username, gamepin: formattedPin });
+      await navigateToTraits({ username, gamepin: formattedPin });
     } catch (error) {
       console.error("Error joining game", error);
       showAlert({
@@ -177,8 +220,13 @@ export default function JoinGame({ navigation, route }) {
       />
       <SafeAreaView style={localStyles.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={localStyles.decorativeLayer}>
-          <View style={localStyles.blobLarge} />
-          <View style={localStyles.blobSmall} />
+          <MotionFloat style={localStyles.blobLarge} driftX={8} driftY={-12} />
+          <MotionFloat
+            style={localStyles.blobSmall}
+            driftX={-6}
+            driftY={10}
+            delay={450}
+          />
         </View>
 
         <KeyboardAvoidingView
@@ -249,14 +297,24 @@ export default function JoinGame({ navigation, route }) {
                     />
                   </View>
 
-                  <View style={localStyles.metaRow}>
+                  <View
+                    style={[
+                      localStyles.metaRow,
+                      isCompact && localStyles.metaRowStacked,
+                    ]}
+                  >
                     <Text style={localStyles.helperLabel}>
                       {t("Characters: {{current}}/{{max}}", {
                         current: formattedPin.length,
                         max: PIN_LENGTH,
                       })}
                     </Text>
-                    <Text style={localStyles.helperAccent}>
+                    <Text
+                      style={[
+                        localStyles.helperAccent,
+                        isCompact && localStyles.helperAccentStacked,
+                      ]}
+                    >
                       {t("Use A-Z and 0-9")}
                     </Text>
                   </View>
@@ -273,7 +331,7 @@ export default function JoinGame({ navigation, route }) {
                     />
                   </View>
 
-                  <TouchableOpacity
+                  <MotionPressable
                     activeOpacity={0.9}
                     onPress={handleJoinGame}
                     disabled={isChecking}
@@ -301,9 +359,9 @@ export default function JoinGame({ navigation, route }) {
                         color="#ffffff"
                       />
                     </LinearGradient>
-                  </TouchableOpacity>
+                  </MotionPressable>
 
-                  <TouchableOpacity
+                  <MotionPressable
                     style={localStyles.secondaryButton}
                     onPress={handleGoBack}
                   >
@@ -316,7 +374,7 @@ export default function JoinGame({ navigation, route }) {
                     <Text style={localStyles.secondaryButtonText}>
                       {t("Back to game options")}
                     </Text>
-                  </TouchableOpacity>
+                  </MotionPressable>
 
                   <View style={localStyles.hintBox}>
                     <Ionicons
@@ -469,18 +527,32 @@ const localStyles = StyleSheet.create({
   metaRow: {
     marginTop: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+  },
+  metaRowStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
   helperLabel: {
     fontSize: 14,
     fontWeight: "500",
     color: "#c2724e",
+    flexShrink: 0,
   },
   helperAccent: {
     fontSize: 14,
     fontWeight: "600",
     color: "#ff66c4",
+    marginLeft: 12,
+    flex: 1,
+    minWidth: 0,
+    textAlign: "right",
+  },
+  helperAccentStacked: {
+    marginLeft: 0,
+    marginTop: 6,
+    width: "100%",
+    textAlign: "left",
   },
   progressTrack: {
     marginTop: 18,

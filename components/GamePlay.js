@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Animated,
   Dimensions,
@@ -14,7 +13,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, update, set, get } from "firebase/database";
+import {
+  ref,
+  onValue,
+  update,
+  set,
+  get,
+  remove,
+  serverTimestamp,
+} from "firebase/database";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { database } from "../firebaseConfig";
@@ -24,7 +31,11 @@ import { toUserKey } from "../utils/userKey";
 import theme from "../utils/theme";
 import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
+import GameRulesModal from "./GameRulesModal";
 import { saveSession, clearSession } from "../utils/session";
+import MotionPressable from "./MotionPressable";
+import MotionFloat from "./MotionFloat";
+import { isGameInactive } from "../utils/gameActivity";
 
 const screenW = Dimensions.get("window").width || 360;
 const DECISION_ANIM_DURATION = 2000;
@@ -83,6 +94,7 @@ export default function GamePlay({ route, navigation }) {
   const [showOverlay, setShowOverlay] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPlus, setShowPlus] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [decisionInProgress, setDecisionInProgress] = useState(false);
   const [decisionCountdown, setDecisionCountdown] = useState(null);
   const [decisionReady, setDecisionReady] = useState(false);
@@ -171,6 +183,18 @@ export default function GamePlay({ route, navigation }) {
     });
   }, [navigation, username]);
 
+  const navigateToEnterUsername = useCallback(() => {
+    if (navigatedAwayRef.current) {
+      return;
+    }
+    navigatedAwayRef.current = true;
+    clearSession();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "EnterUsername" }],
+    });
+  }, [navigation]);
+
   const navigateToGameEnd = useCallback(() => {
     if (navigatedAwayRef.current) {
       return;
@@ -238,6 +262,17 @@ export default function GamePlay({ route, navigation }) {
       const gameData = snapshot.val();
       if (!gameData) {
         navigateToOptions();
+        unsubscribe();
+        return;
+      }
+      if (isGameInactive(gameData.lastActivityAt)) {
+        remove(gameRef).catch((error) => {
+          console.warn(
+            "Failed to remove inactive game:",
+            error?.message || error,
+          );
+        });
+        navigateToEnterUsername();
         unsubscribe();
         return;
       }
@@ -366,6 +401,7 @@ export default function GamePlay({ route, navigation }) {
   }, [
     gamepin,
     navigateToGameEnd,
+    navigateToEnterUsername,
     navigateToOptions,
     overlay.visible,
     overlayX,
@@ -418,7 +454,8 @@ export default function GamePlay({ route, navigation }) {
     : 0;
   const revealActive =
     isRevealForThisTrait && acceptedTraits.length > 0 && revealShownCount > 0;
-  const revealVisible = revealActive && !overlay.visible && !showOverlay;
+  const revealVisible =
+    revealActive && !overlay.visible && !showOverlay && !decisionInProgress;
   const revealedTraits = useMemo(() => {
     if (!revealVisible) {
       return [];
@@ -438,7 +475,8 @@ export default function GamePlay({ route, navigation }) {
     !finalRoundReached &&
     !leftLastRound &&
     currentTraitId &&
-    acceptedTraits.length > 0;
+    acceptedTraits.length > 0 &&
+    !decisionInProgress;
   const revealPending =
     revealExpected &&
     !revealVisible &&
@@ -653,6 +691,7 @@ export default function GamePlay({ route, navigation }) {
         [`players/${usernameKey}/active`]: false,
         currentPlayerIndex: nextIndex,
         currentRound: nextRound,
+        lastActivityAt: serverTimestamp(),
       };
 
       if (
@@ -997,6 +1036,7 @@ export default function GamePlay({ route, navigation }) {
       ? currentTurnPlayer.acceptedTraits
       : [];
 
+    const baseMaxAccepted = Number(currentTurnPlayer.maxAccepted || 0);
     const baseSkipped = Number(currentTurnPlayer.skipCount || 0);
     const baseKept = Number(currentTurnPlayer.keepCount || 0);
 
@@ -1004,9 +1044,15 @@ export default function GamePlay({ route, navigation }) {
       choice === "juu"
         ? [...baseAccepted, gameState.currentTrait]
         : [];
+    const nextMaxAccepted = Math.max(
+      baseMaxAccepted,
+      baseAccepted.length,
+      nextAccepted.length,
+    );
 
     await update(playerRef, {
       acceptedTraits: nextAccepted,
+      maxAccepted: nextMaxAccepted,
       keepCount: choice === "juu" ? baseKept + 1 : baseKept,
       skipCount: choice === "ei" ? baseSkipped + 1 : baseSkipped,
     });
@@ -1062,6 +1108,7 @@ export default function GamePlay({ route, navigation }) {
         currentPlayerIndex: nextPlayerIndex,
         currentRound: nextRound,
         ...traitUpdates,
+        lastActivityAt: serverTimestamp(),
       };
       const nextTraitId = traitUpdates.currentTrait?.traitId ?? null;
       if (nextTraitId && nextAcceptedLength > 0) {
@@ -1111,49 +1158,58 @@ export default function GamePlay({ route, navigation }) {
 
       <SafeAreaView style={gp.safeArea} edges={["top", "bottom"]}>
         <View pointerEvents="none" style={gp.decorativeLayer}>
-          <View style={gp.blobTop} />
-          <View style={gp.blobBottom} />
+          <MotionFloat style={gp.blobTop} driftX={10} driftY={-14} />
+          <MotionFloat
+            style={gp.blobBottom}
+            driftX={-8}
+            driftY={12}
+            delay={500}
+          />
         </View>
         <ScrollView
           style={gp.scroll}
           contentContainerStyle={gp.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <View style={gp.header}>
-            <View style={gp.headerTop}>
-              <View style={gp.roundRow}>
-                <View style={gp.roundBadge}>
-                  <Ionicons
-                    name="repeat-outline"
-                    size={16}
-                    color="#F8ECFF"
-                    style={gp.roundBadgeIcon}
-                  />
-                  <Text style={gp.roundBadgeText}>
-                    {t("Round {{number}}", { number: gameState.currentRound })}
-                  </Text>
+            <View style={gp.header}>
+              <View style={gp.headerTop}>
+                <View style={gp.headerLeftRow}>
+                  <View style={gp.roundBadge}>
+                    <Ionicons
+                      name="repeat-outline"
+                      size={16}
+                      color="#F8ECFF"
+                      style={gp.roundBadgeIcon}
+                    />
+                    <Text style={gp.roundBadgeText}>
+                      {t("Round {{number}}", { number: gameState.currentRound })}
+                    </Text>
+                  </View>
+                  <View style={gp.turnChip}>
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={20}
+                      color="#F8ECFF"
+                      style={gp.turnChipIcon}
+                    />
+                    <Text
+                      style={gp.turnChipText}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {currentPlayer?.username || "-"}
+                    </Text>
+                  </View>
                 </View>
-                <View style={gp.turnChip}>
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={20}
-                    color="#F8ECFF"
-                    style={gp.turnChipIcon}
-                  />
-                  <Text style={gp.turnChipText}>
-                    {currentPlayer?.username || "-"}
-                  </Text>
-                </View>
-                <TouchableOpacity
+                <MotionPressable
                   activeOpacity={0.85}
                   style={gp.headerSettingsButton}
                   onPress={() => setShowSettings(true)}
                   accessibilityLabel={t("Settings")}
                 >
                   <Ionicons name="settings-outline" size={20} color="#F8ECFF" />
-                </TouchableOpacity>
+                </MotionPressable>
               </View>
-            </View>
             <Text style={gp.headerSubtitle}>
               {isCurrentUserTurn
                 ? t("Does this trait describe you?")
@@ -1199,12 +1255,25 @@ export default function GamePlay({ route, navigation }) {
                   color="#ff66c4"
                   style={gp.traitLabelIcon}
                 />
-                <Text style={gp.traitLabel}>{t("Date partner traits")}</Text>
-              </View>
-              <Text style={gp.traitText}>{traitText}</Text>
-              <View style={gp.traitMetaRow}>
-                <Ionicons
-                  name={
+                <Text style={gp.traitLabel}>{t("Date partner trait")}</Text>
+                </View>
+                <Text style={gp.traitText}>{traitText}</Text>
+                {isCurrentUserTurn && (
+                  <View style={gp.traitCalloutRow}>
+                    <Ionicons
+                      name="megaphone-outline"
+                      size={16}
+                      color="#c2724e"
+                      style={gp.traitCalloutIcon}
+                    />
+                    <Text style={gp.traitCalloutText}>
+                      {t("Read the trait aloud to the other players")}
+                    </Text>
+                  </View>
+                )}
+                <View style={gp.traitMetaRow}>
+                  <Ionicons
+                    name={
                     isCurrentUserTurn ? "heart-circle-outline" : "people-outline"
                   }
                   size={18}
@@ -1218,7 +1287,7 @@ export default function GamePlay({ route, navigation }) {
 
           {isCurrentUserTurn ? (
             <View style={gp.actions}>
-              <TouchableOpacity
+              <MotionPressable
                 activeOpacity={0.9}
                 style={[
                   gp.actionButton,
@@ -1243,8 +1312,8 @@ export default function GamePlay({ route, navigation }) {
                     {`${t("Keep")}${decisionCountdownLabel}`}
                   </Text>
                 </LinearGradient>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </MotionPressable>
+              <MotionPressable
                 activeOpacity={0.9}
                 style={[
                   gp.actionButton,
@@ -1269,7 +1338,7 @@ export default function GamePlay({ route, navigation }) {
                     {`${t("Skip")}${decisionCountdownLabel}`}
                   </Text>
                 </LinearGradient>
-              </TouchableOpacity>
+              </MotionPressable>
             </View>
           ) : (
             <View style={gp.waitingCard}>
@@ -1366,12 +1435,12 @@ export default function GamePlay({ route, navigation }) {
             >
               <Text style={gp.revealDateTitle}>{currentDateLabel}</Text>
             </LinearGradient>
-            <LinearGradient
-              colors={theme.cardFrameGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={gp.revealCard}
-            >
+              <LinearGradient
+                colors={[theme.modalSurface, theme.modalSurface]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={gp.revealCard}
+              >
               <View style={gp.revealHeader}>
                 <View style={gp.revealAvatar}>
                   <Text style={gp.revealAvatarText}>{playerInitial}</Text>
@@ -1423,7 +1492,7 @@ export default function GamePlay({ route, navigation }) {
                 ))}
               </ScrollView>
 
-              <TouchableOpacity
+              <MotionPressable
                 activeOpacity={0.9}
                 style={[
                   gp.revealButton,
@@ -1452,7 +1521,7 @@ export default function GamePlay({ route, navigation }) {
                     />
                   </View>
                 </LinearGradient>
-              </TouchableOpacity>
+              </MotionPressable>
               {isCurrentUserTurn && (
                 <View style={gp.revealCallout}>
                   <Ionicons
@@ -1461,9 +1530,9 @@ export default function GamePlay({ route, navigation }) {
                     color={theme.accentPrimary}
                     style={gp.revealCalloutIcon}
                   />
-                  <Text style={gp.revealCalloutText}>
-                    {t("Read traits aloud")}
-                  </Text>
+                    <Text style={gp.revealCalloutText}>
+                      {t("Read traits aloud")}
+                    </Text>
                 </View>
               )}
               {!isCurrentUserTurn && (
@@ -1527,6 +1596,7 @@ export default function GamePlay({ route, navigation }) {
         <SettingsModal
           visible={showSettings}
           onClose={() => setShowSettings(false)}
+          onOpenGameRules={() => setShowRules(true)}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -1547,6 +1617,10 @@ export default function GamePlay({ route, navigation }) {
             onRestorePurchases={handleRestorePurchases}
           />
         )}
+        <GameRulesModal
+          visible={showRules}
+          onClose={() => setShowRules(false)}
+        />
       </SafeAreaView>
     </View>
   );
@@ -1607,11 +1681,11 @@ const gp = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 12,
   },
-  roundRow: {
+  headerLeftRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
-    marginBottom: 0,
+    flex: 1,
+    minWidth: 0,
   },
   roundBadge: {
     flexDirection: "row",
@@ -1638,6 +1712,8 @@ const gp = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 14,
     marginLeft: 10,
+    flexShrink: 1,
+    minWidth: 0,
   },
   turnChipIcon: {
     marginRight: 6,
@@ -1646,12 +1722,14 @@ const gp = StyleSheet.create({
     color: "#F8ECFF",
     fontSize: 14,
     fontWeight: "700",
+    flexShrink: 1,
   },
   headerSettingsButton: {
     padding: 10,
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.2)",
     marginLeft: 14,
+    flexShrink: 0,
   },
   leaveButton: {
     flexDirection: "row",
@@ -1731,6 +1809,24 @@ const gp = StyleSheet.create({
     lineHeight: 34,
     textAlign: "center",
     fontWeight: "700",
+  },
+  traitCalloutRow: {
+    marginTop: 12,
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+  },
+  traitCalloutIcon: {
+    marginRight: 6,
+  },
+  traitCalloutText: {
+    color: "#c2724e",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    flexShrink: 1,
   },
   traitMetaRow: {
     marginTop: 20,

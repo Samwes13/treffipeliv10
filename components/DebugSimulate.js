@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ref, set, update, get, remove } from "firebase/database";
 import { seedPlayersWithTraits } from "../utils/debugSeed";
@@ -7,6 +7,7 @@ import { database } from "../firebaseConfig";
 import styles from "../styles";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLanguage } from "../contexts/LanguageContext";
+import MotionPressable from "./MotionPressable";
 
 const BASE_TRAITS = [
   "Funny",
@@ -273,7 +274,7 @@ export default function DebugSimulate({ navigation }) {
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
         <View style={styles.container}>
           <Text style={styles.title}>{t("Debug Bot Simulator")}</Text>
-          <TouchableOpacity
+          <MotionPressable
             style={[styles.button, running && styles.disabledButton]}
             disabled={running}
             onPress={run}
@@ -283,7 +284,7 @@ export default function DebugSimulate({ navigation }) {
                 ? t("Running...")
                 : t("Run {{count}}-Bot Simulation", { count: BOT_COUNT })}
             </Text>
-          </TouchableOpacity>
+          </MotionPressable>
           <ScrollView style={{ maxHeight: 300, marginTop: 16, width: "100%" }}>
             {logs.map((l, i) => (
               <Text key={i} style={styles.playerText}>
