@@ -15,6 +15,7 @@ import styles from "./styles"; // Oletetaan, ett� style.js sijaitsee samassa h
 import { canUseMobileAds, loadGoogleMobileAds } from "./utils/googleMobileAds";
 import EnterUsername from "./components/EnterUsername";
 import GameOptionScreen from "./components/GameOptionScreen";
+import CustomModeSettings from "./components/CustomModeSettings";
 import CardTraits from "./components/CardTraits";
 import GameLobby from "./components/GameLobby";
 import JoinGame from "./components/JoinGame";
@@ -22,9 +23,12 @@ import HowToPlay from "./components/HowToPlay";
 import GamePlay from "./components/GamePlay";
 import GameEnd from "./components/GameEnd";
 import DebugSimulate from "./components/DebugSimulate";
+import AutoFillTraitManager from "./components/AutoFillTraitManager";
+import FavoritesScreen from "./components/FavoritesScreen";
 import ModalAlert from "./components/ModalAlert";
 import { LanguageProvider, useLanguage } from "./contexts/LanguageContext";
 import { PlusProvider } from "./contexts/PlusContext";
+import { FavoritesProvider } from "./contexts/FavoritesContext";
 import { auth, database } from "./firebaseConfig";
 import { loadSession, clearSession } from "./utils/session";
 import { isGameInactive } from "./utils/gameActivity";
@@ -38,6 +42,8 @@ const Stack = createNativeStackNavigator();
 
 function AppNavigator({ initialRoute, initialParams, linking, navTheme }) {
   const { t } = useLanguage();
+  const showAutoFillManager =
+    typeof __DEV__ !== "undefined" && __DEV__;
   const [isOffline, setIsOffline] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
   const [offlineDismissed, setOfflineDismissed] = useState(false);
@@ -137,6 +143,11 @@ function AppNavigator({ initialRoute, initialParams, linking, navTheme }) {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="CustomModeSettings"
+            component={CustomModeSettings}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="GameLobby"
             component={GameLobby}
             options={{ headerShown: false }}
@@ -169,10 +180,22 @@ function AppNavigator({ initialRoute, initialParams, linking, navTheme }) {
             options={{ headerShown: false }}
           />
           <Stack.Screen
+            name="Favorites"
+            component={FavoritesScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="DebugSimulate"
             component={DebugSimulate}
             options={{ headerShown: false }}
           />
+          {showAutoFillManager && (
+            <Stack.Screen
+              name="AutoFillTraitManager"
+              component={AutoFillTraitManager}
+              options={{ headerShown: false }}
+            />
+          )}
         </Stack.Navigator>
       </NavigationContainer>
       <ModalAlert
@@ -329,6 +352,7 @@ export default function App() {
       screens: {
         EnterUsername: "enterusername",
         GameOptionScreen: "gameoptionscreen",
+        CustomModeSettings: "custommodesettings",
         GameLobby: "GameLobby",
         JoinGame: "JoinGame",
         HowToPlay: "HowToPlay",
@@ -336,6 +360,7 @@ export default function App() {
         GamePlay: "GamePlay",
         GameEnd: "GameEnd",
         DebugSimulate: "DebugSimulate",
+        Favorites: "Favorites",
       },
     },
   };
@@ -380,16 +405,18 @@ export default function App() {
 
   return (
     <PlusProvider>
-      <LanguageProvider>
-        <SafeAreaProvider>
-          <AppNavigator
-            initialRoute={initialRoute}
-            initialParams={initialParams}
-            linking={linking}
-            navTheme={navTheme}
-          />
-        </SafeAreaProvider>
-      </LanguageProvider>
+      <FavoritesProvider>
+        <LanguageProvider>
+          <SafeAreaProvider>
+            <AppNavigator
+              initialRoute={initialRoute}
+              initialParams={initialParams}
+              linking={linking}
+              navTheme={navTheme}
+            />
+          </SafeAreaProvider>
+        </LanguageProvider>
+      </FavoritesProvider>
     </PlusProvider>
   );
 }

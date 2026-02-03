@@ -283,6 +283,8 @@ export default function EnterUsername({ navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenGameRules={() => setShowRules(true)}
+          onOpenFavorites={() => navigation.navigate("Favorites")}
+          onOpenAutoFillManager={() => navigation.navigate("AutoFillTraitManager")}
           onOpenPlus={() => {
             if (isPlus) {
               return;

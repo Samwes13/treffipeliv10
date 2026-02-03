@@ -40,8 +40,10 @@ import GameRulesModal from "./GameRulesModal";
 import MotionPressable from "./MotionPressable";
 import MotionFloat from "./MotionFloat";
 import { clearSession } from "../utils/session";
+import AutoFillTraitPickerModal from "./AutoFillTraitPickerModal";
+import useAutoFillTraits from "../hooks/useAutoFillTraits";
 
-const TRAIT_COUNT = 6;
+const DEFAULT_TRAIT_COUNT = 6;
 const MIN_INPUT_HEIGHT = 52;
 const TRAIT_GUIDE_STORAGE_KEY = "cardTraitsGuideHidden";
 const TRAIT_GUIDE_IMAGES = {
@@ -54,138 +56,6 @@ const TRAIT_GUIDE_IMAGES = {
     negative: require("../assets/huonotpiirteet.png"),
   },
 };
-const TURN_ON_TRAITS_EN = [
-  "Always brings snacks",
-  "Plans surprise dates",
-  "Remembers small details",
-  "Laughs easily",
-  "Keeps promises",
-  "Great with pets",
-  "Cooks new recipes",
-  "Sends good morning texts",
-  "Organises friend hangouts",
-  "Punctual and prepared",
-  "Spontaneous road-tripper",
-  "Board game strategist",
-  "Finds new coffee spots",
-  "Up for karaoke nights",
-  "Loves long walks",
-  "Enjoys museums",
-  "Great listener",
-  "Shares playlists",
-  "Good with money",
-  "Takes initiative",
-  "Keeps plants alive",
-  "Asks thoughtful questions",
-  "Adapts quickly",
-  "Comfortable in silence",
-  "Honest feedback giver",
-  "Makes people feel welcome",
-  "Active texter",
-  "Learn-by-doing attitude",
-  "Fixes small things at home",
-  "Plans cozy nights in",
-];
-
-const TURN_OFF_TRAITS_EN = [
-  "Leaves dishes in the sink",
-  "Chronic phone scroller at dinner",
-  "Always late",
-  "Ghosts conversations",
-  "Cancels last minute",
-  "Forgets birthdays",
-  "Talks over others",
-  "Avoids tough talks",
-  "Leaves mugs everywhere",
-  "Hates planning ahead",
-  "Scrolls during movies",
-  "Overbooks every evening",
-  "Perpetual alarm snoozer",
-  "Never answers calls",
-  "Brings work to dates",
-  "Messy car",
-  "Interrupts stories",
-  "Changes plans often",
-  "Talks only about self",
-  "Leaves lights on",
-  "Loud eater",
-  "Ignores messages for days",
-  "Always on speakerphone",
-  "Forgets to lock doors",
-  "Spends hours gaming",
-  "Overshares online",
-  "Leaves laundry out",
-  "Hates trying new food",
-  "Doesn't tip",
-  "Snores loudly",
-];
-
-const TURN_ON_TRAITS_FI = [
-  "Tuo aina snacksit",
-  "Keksii yllätystreffejä",
-  "Muistaa pienet yksityiskohdat",
-  "Nauraa helposti",
-  "Pitää lupaukset",
-  "Hyvä lemmikkien kanssa",
-  "Kokeilee uusia reseptejä",
-  "Lähettää hyvän huomenen viestejä",
-  "Järjestää kaveri-illat",
-  "Täsmällinen ja valmis",
-  "Lähtisi roadtripille heti",
-  "Lautapelistrategi",
-  "Löytää uudet kahvilat",
-  "Aina valmis karaokeseen",
-  "Rakastaa pitkiä kävelyjä",
-  "Fiilistelee museoita",
-  "Kuuntelee oikeasti",
-  "Jakaa soittolistoja",
-  "Taloudenpito hallussa",
-  "Ottaa aloitetta",
-  "Hoitaa kasvit hengissä",
-  "Kysyy hyviä kysymyksiä",
-  "Mukautuu nopeasti",
-  "Mukava olla hiljaa yhdessä",
-  "Antaa rehellistä palautetta",
-  "Saa muut tuntemaan olonsa tervetulleeksi",
-  "Vastaa viesteihin nopeasti",
-  "Tekee mieluummin kuin puhuu",
-  "Korjaa pieniä juttuja kotona",
-  "Suunnittelee kotoisia iltoja",
-];
-
-const TURN_OFF_TRAITS_FI = [
-  "Jättää astiat altaaseen",
-  "Tuijottaa puhelinta ruokapöydässä",
-  "On aina myöhässä",
-  "Katoaa kesken keskustelun",
-  "Peruu viime hetkellä",
-  "Unohtaa synttärit",
-  "Puhuu päälle",
-  "Välttelee vaikeita juttuja",
-  "Jättää mukit lojumaan",
-  "Vihaa suunnittelua",
-  "Selaa leffaa katsoessa",
-  "Varaa kalenterin liian täyteen",
-  "Torkuttaa herätyksiä",
-  "Ei vastaa puheluihin",
-  "Tuo töitä treffeille",
-  "Sotkuinen auto",
-  "Keskeyttää tarinat",
-  "Muuttaa suunnitelmia jatkuvasti",
-  "Puhuu vain itsestään",
-  "Unohtaa valot päälle",
-  "Syö kovaan ääneen",
-  "Ei vastaa viesteihin päiviin",
-  "Kaiutin päällä julkisesti",
-  "Unohtaa lukita ovet",
-  "Pelaa tuntikausia",
-  "Jaa liikaa somessa",
-  "Jättää pyykit viikoiksi",
-  "Ei suostu kokeilemaan uusia ruokia",
-  "Ei jätä tippiä",
-  "Kuorsaa kovaa",
-];
-
 export default function CardTraits({ navigation, route }) {
   const { t, language } = useLanguage();
   const { username = "", gamepin = "" } = route.params || {};
@@ -213,9 +83,14 @@ export default function CardTraits({ navigation, route }) {
     guideMaxHeight > 0
       ? { height: guideMaxHeight, maxHeight: guideMaxHeight }
       : null;
-  const [traits, setTraits] = useState(Array(TRAIT_COUNT).fill(""));
+  const [isCustomMode, setIsCustomMode] = useState(false);
+  const [gameSettingsLoaded, setGameSettingsLoaded] = useState(false);
+  const [traitCount, setTraitCount] = useState(DEFAULT_TRAIT_COUNT);
+  const [traits, setTraits] = useState(
+    Array(DEFAULT_TRAIT_COUNT).fill(""),
+  );
   const [inputHeights, setInputHeights] = useState(() =>
-    Array(TRAIT_COUNT).fill(MIN_INPUT_HEIGHT),
+    Array(DEFAULT_TRAIT_COUNT).fill(MIN_INPUT_HEIGHT),
   );
   const [touchedInputs, setTouchedInputs] = useState({});
   const [guideVisible, setGuideVisible] = useState(false);
@@ -225,12 +100,16 @@ export default function CardTraits({ navigation, route }) {
   const [showPlus, setShowPlus] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [leaveInProgress, setLeaveInProgress] = useState(false);
-  const [alertState, setAlertState] = useState({
-    visible: false,
-    title: "",
-    message: "",
-    variant: "info",
-  });
+    const [alertState, setAlertState] = useState({
+      visible: false,
+      title: "",
+      message: "",
+      variant: "info",
+      buttons: undefined,
+    });
+  const [autoFillVisible, setAutoFillVisible] = useState(false);
+  const [autoFillMode, setAutoFillMode] = useState("good");
+  const [autoFillIndex, setAutoFillIndex] = useState(null);
   const planName = "Plus";
   const planPrice = "2,99 EUR";
   const scrollRef = useRef(null);
@@ -245,13 +124,94 @@ export default function CardTraits({ navigation, route }) {
     }
   };
 
-  const turnOnPool = language === "fi" ? TURN_ON_TRAITS_FI : TURN_ON_TRAITS_EN;
-  const turnOffPool =
-    language === "fi" ? TURN_OFF_TRAITS_FI : TURN_OFF_TRAITS_EN;
   const guideImages =
     language === "fi" ? TRAIT_GUIDE_IMAGES.fi : TRAIT_GUIDE_IMAGES.en;
 
   const keySafeUsername = useMemo(() => toUserKey(username), [username]);
+  const { categories } = useAutoFillTraits();
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadGameSettings = async () => {
+      if (!gamepin) {
+        if (isMounted) {
+          setGameSettingsLoaded(true);
+        }
+        return;
+      }
+      try {
+        const gameRef = ref(database, `games/${gamepin}`);
+        const snapshot = await get(gameRef);
+        if (!snapshot.exists()) {
+          if (isMounted) {
+            setGameSettingsLoaded(true);
+          }
+          return;
+        }
+        const gameData = snapshot.val() || {};
+        const customMode = gameData.mode === "custom";
+        const requestedRounds = Number(gameData.roundsTotal || 0);
+        const clampedRounds = customMode
+          ? Math.max(3, Math.min(20, requestedRounds || DEFAULT_TRAIT_COUNT))
+          : DEFAULT_TRAIT_COUNT;
+        if (isMounted) {
+          setIsCustomMode(customMode);
+          setTraitCount(clampedRounds);
+          setGameSettingsLoaded(true);
+        }
+      } catch (error) {
+        console.warn("Failed to load game settings:", error?.message || error);
+        if (isMounted) {
+          setGameSettingsLoaded(true);
+        }
+      }
+    };
+
+    loadGameSettings();
+    return () => {
+      isMounted = false;
+    };
+  }, [gamepin]);
+
+  useEffect(() => {
+    setTraits((current) => {
+      if (current.length === traitCount) {
+        return current;
+      }
+      const next = [...current];
+      if (next.length < traitCount) {
+        while (next.length < traitCount) {
+          next.push("");
+        }
+      } else {
+        next.length = traitCount;
+      }
+      return next;
+    });
+    setInputHeights((current) => {
+      if (current.length === traitCount) {
+        return current;
+      }
+      const next = [...current];
+      if (next.length < traitCount) {
+        while (next.length < traitCount) {
+          next.push(MIN_INPUT_HEIGHT);
+        }
+      } else {
+        next.length = traitCount;
+      }
+      return next;
+    });
+    setTouchedInputs((current) => {
+      const next = {};
+      for (let i = 0; i < traitCount; i += 1) {
+        if (current[i]) {
+          next[i] = true;
+        }
+      }
+      return next;
+    });
+  }, [traitCount]);
 
   const trimmedTraits = useMemo(
     () => traits.map((trait) => trait.trim()),
@@ -281,14 +241,14 @@ export default function CardTraits({ navigation, route }) {
     [trimmedTraits],
   );
 
-  const progress = completedCount / TRAIT_COUNT;
-  const hasAllTraits = completedCount === TRAIT_COUNT;
+  const progress = traitCount ? completedCount / traitCount : 0;
+  const hasAllTraits = completedCount === traitCount;
   const hasDuplicates = duplicateEntries.size > 0;
   const duplicateErrorText = t("This trait is already on the list.");
   const missingFieldText = t("Please complete this field.");
   const completedLabel = t("Complete: {{current}}/{{total}}", {
     current: completedCount,
-    total: TRAIT_COUNT,
+    total: traitCount,
   });
   const duplicateHint = t("Remove duplicate traits before continuing.");
   const finishedHint = t("All fields completed!");
@@ -317,39 +277,83 @@ export default function CardTraits({ navigation, route }) {
     });
   };
 
-  const handleAutoFillSingle = (index) => {
-    const pool = index < 3 ? turnOnPool : turnOffPool;
-    const usedSet = new Set(
-      trimmedTraits
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-    );
-    const available = pool.filter((trait) => {
-      if (!trait) {
-        return false;
-      }
-      const key = trait.trim().toLowerCase();
-      return !usedSet.has(key);
-    });
-    const selectionPool = available.length ? available : pool;
-    if (!selectionPool.length) {
+  const positiveTraitCount = Math.floor(traitCount / 2);
+  const negativeTraitCount = traitCount - positiveTraitCount;
+  const positiveIndexes = Array.from(
+    { length: positiveTraitCount },
+    (_, index) => index,
+  );
+  const negativeIndexes = Array.from(
+    { length: negativeTraitCount },
+    (_, index) => index + positiveTraitCount,
+  );
+  const hasCategories = categories.length > 0;
+  const canAutoFillGood = hasCategories;
+  const canAutoFillBad = hasCategories;
+
+  const handleAutoFillPress = (index) => {
+    if (!isPlus) {
+      showAlert({
+        title: t("Plus"),
+        message: t("You need a Plus subscription to use Auto Fill."),
+        variant: "warn",
+        buttons: [
+          {
+            text: t("Open Plus"),
+            onPress: () => setShowPlus(true),
+          },
+          { text: t("OK") },
+        ],
+      });
       return;
     }
-    const nextTrait =
-      selectionPool[Math.floor(Math.random() * selectionPool.length)] || "";
+    const mode = index < positiveTraitCount ? "good" : "bad";
+    if (!hasCategories) {
+      showAlert({
+        title: t("Notice"),
+        message: t("No categories available yet."),
+        variant: "info",
+      });
+      return;
+    }
+    setAutoFillIndex(index);
+    setAutoFillMode(mode);
+    setAutoFillVisible(true);
+  };
+
+  const handleAutoFillSelect = (traitText) => {
+    if (autoFillIndex == null) {
+      return;
+    }
+    const nextTrait = String(traitText || "");
     setTraits((current) => {
       const next = [...current];
-      next[index] = nextTrait;
+      next[autoFillIndex] = nextTrait;
       return next;
     });
-    const targetInput = inputRefs.current[index];
+    const targetInput = inputRefs.current[autoFillIndex];
     if (targetInput?.setNativeProps) {
-      // Ensure programmatic autofill updates TextInput UI immediately on all devices.
       targetInput.setNativeProps({ text: nextTrait });
     }
+    setTouchedInputs((current) => ({
+      ...current,
+      [autoFillIndex]: true,
+    }));
+  };
+  const handleAutoFillClose = () => {
+    setAutoFillVisible(false);
+    setAutoFillIndex(null);
   };
 
   useEffect(() => {
+    if (!gameSettingsLoaded) {
+      return;
+    }
+    if (isCustomMode) {
+      setGuideVisible(false);
+      setGuideOptOut(false);
+      return;
+    }
     let isMounted = true;
     const loadGuidePreference = async () => {
       try {
@@ -373,7 +377,7 @@ export default function CardTraits({ navigation, route }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [gameSettingsLoaded, isCustomMode]);
 
   useEffect(
     () => () => {
@@ -403,8 +407,8 @@ export default function CardTraits({ navigation, route }) {
         const sorted = rawTraits
           .filter((item) => item && typeof item === "object")
           .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-        const nextTraits = Array(TRAIT_COUNT).fill("");
-        sorted.slice(0, TRAIT_COUNT).forEach((trait, index) => {
+        const nextTraits = Array(traitCount).fill("");
+        sorted.slice(0, traitCount).forEach((trait, index) => {
           if (trait?.text) {
             nextTraits[index] = trait.text;
           }
@@ -422,7 +426,13 @@ export default function CardTraits({ navigation, route }) {
     return () => {
       isMounted = false;
     };
-  }, [gamepin, keySafeUsername]);
+  }, [gamepin, keySafeUsername, traitCount]);
+
+  useEffect(() => {
+    if (isCustomMode) {
+      setGuideVisible(false);
+    }
+  }, [isCustomMode]);
 
   const handleGuideClose = async () => {
     setGuideVisible(false);
@@ -455,7 +465,7 @@ export default function CardTraits({ navigation, route }) {
     }
 
     const fallback = () => {
-      if (index >= 3) {
+      if (index >= positiveTraitCount) {
         setTimeout(() => {
           scrollView.scrollToEnd?.({ animated: true });
         }, 60);
@@ -505,11 +515,11 @@ export default function CardTraits({ navigation, route }) {
 
   const markAllTouched = () => {
     setTouchedInputs((current) => {
-      if (Object.keys(current).length === TRAIT_COUNT) {
+      if (Object.keys(current).length === traitCount) {
         return current;
       }
       const next = {};
-      for (let i = 0; i < TRAIT_COUNT; i += 1) {
+      for (let i = 0; i < traitCount; i += 1) {
         next[i] = true;
       }
       return next;
@@ -520,6 +530,7 @@ export default function CardTraits({ navigation, route }) {
     setAlertState((prev) => ({
       ...prev,
       visible: true,
+      buttons: undefined,
       ...updates,
     }));
 
@@ -706,7 +717,11 @@ export default function CardTraits({ navigation, route }) {
       if (!hasAllTraits) {
         showAlert({
           title: t("Traits Missing"),
-          message: t("Fill in all six fields before continuing."),
+          message: isCustomMode
+            ? t("Fill in all {{count}} fields before continuing.", {
+                count: traitCount,
+              })
+            : t("Fill in all six fields before continuing."),
           variant: "error",
         });
         return;
@@ -760,9 +775,14 @@ export default function CardTraits({ navigation, route }) {
           traitsCompleted: true,
         },
       );
-      await update(ref(database, `games/${gamepin}`), {
+      const gameData = gameSnapshot.val() || {};
+      const gameUpdates = {
         lastActivityAt: serverTimestamp(),
-      });
+      };
+      if (gameData.mode === "custom") {
+        gameUpdates.status = "lobby";
+      }
+      await update(ref(database, `games/${gamepin}`), gameUpdates);
 
       navigation.navigate("GameLobby", { gamepin, username });
     } catch (error) {
@@ -864,25 +884,40 @@ export default function CardTraits({ navigation, route }) {
                   <View style={localStyles.cardHeader}>
                     <View style={localStyles.cardHeaderRow}>
                       <Text style={localStyles.cardTitle}>
-                        {language === "fi" ? t("Trait Checklist") : t("Trait")}
+                        {isCustomMode
+                          ? t("Write {{count}} traits", {
+                              count: traitCount,
+                            })
+                          : language === "fi"
+                          ? t("Trait Checklist")
+                          : t("Trait")}
                       </Text>
-                      <MotionPressable
-                        style={localStyles.guideButton}
-                        onPress={() => setGuideVisible(true)}
-                        activeOpacity={0.85}
-                        accessibilityRole="button"
-                        accessibilityLabel={t("Trait guide")}
-                      >
-                        <Ionicons
-                          name="help-circle-outline"
-                          size={18}
-                          color="#ff66c4"
-                        />
-                        <Text style={localStyles.guideButtonText}>
-                          {t("Trait guide")}
-                        </Text>
-                      </MotionPressable>
+                      {!isCustomMode && (
+                        <MotionPressable
+                          style={localStyles.guideButton}
+                          onPress={() => setGuideVisible(true)}
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityLabel={t("Trait guide")}
+                        >
+                          <Ionicons
+                            name="help-circle-outline"
+                            size={18}
+                            color="#ff66c4"
+                          />
+                          <Text style={localStyles.guideButtonText}>
+                            {t("Trait guide")}
+                          </Text>
+                        </MotionPressable>
+                      )}
                     </View>
+                    {isCustomMode && (
+                      <Text style={localStyles.cardCopy}>
+                        {t("Each player writes {{count}} traits.", {
+                          count: traitCount,
+                        })}
+                      </Text>
+                    )}
                   </View>
 
                   <View style={localStyles.groupSection}>
@@ -898,7 +933,7 @@ export default function CardTraits({ navigation, route }) {
                           {language === "fi" ? t("Turn On") : t("Good Traits")}
                         </Text>
                       </View>
-                      {[0, 1, 2].map((index) => {
+                      {positiveIndexes.map((index) => {
                         const state = getFieldState(index);
                         const showError =
                           state === "duplicate" ||
@@ -945,7 +980,9 @@ export default function CardTraits({ navigation, route }) {
                                   handleInputChange(text, index)
                                 }
                                 placeholderTextColor="rgba(45, 16, 42, 0.4)"
-                                returnKeyType="next"
+                                returnKeyType={
+                                  index === traitCount - 1 ? "done" : "next"
+                                }
                                 multiline
                                 textAlignVertical="top"
                                 onContentSizeChange={(event) =>
@@ -961,12 +998,13 @@ export default function CardTraits({ navigation, route }) {
                               />
                               <MotionPressable
                                 activeOpacity={0.85}
-                                onPress={() => handleAutoFillSingle(index)}
+                                onPress={() => handleAutoFillPress(index)}
                                 style={[
                                   localStyles.autoFillButton,
-                                  !isPlus && localStyles.autoFillButtonDisabled,
+                                  !canAutoFillGood &&
+                                    localStyles.autoFillButtonDisabled,
                                 ]}
-                                disabled={!isPlus}
+                                disabled={!canAutoFillGood}
                                 accessibilityLabel={t("Auto-fill Traits")}
                               >
                                 <LinearGradient
@@ -1002,10 +1040,12 @@ export default function CardTraits({ navigation, route }) {
                           style={localStyles.groupIcon}
                         />
                         <Text style={localStyles.groupTitleNegative}>
-                          {language === "fi" ? t("Turn Off") : t("Challenging Traits")}
+                          {language === "fi"
+                            ? t("Turn Off")
+                            : t("Challenging Traits")}
                         </Text>
                       </View>
-                      {[3, 4, 5].map((index) => {
+                      {negativeIndexes.map((index) => {
                         const state = getFieldState(index);
                         const showError =
                           state === "duplicate" ||
@@ -1053,7 +1093,7 @@ export default function CardTraits({ navigation, route }) {
                                 }
                                 placeholderTextColor="rgba(45, 16, 42, 0.4)"
                                 returnKeyType={
-                                  index === TRAIT_COUNT - 1 ? "done" : "next"
+                                  index === traitCount - 1 ? "done" : "next"
                                 }
                                 multiline
                                 textAlignVertical="top"
@@ -1070,12 +1110,13 @@ export default function CardTraits({ navigation, route }) {
                               />
                               <MotionPressable
                                 activeOpacity={0.85}
-                                onPress={() => handleAutoFillSingle(index)}
+                                onPress={() => handleAutoFillPress(index)}
                                 style={[
                                   localStyles.autoFillButton,
-                                  !isPlus && localStyles.autoFillButtonDisabled,
+                                  !canAutoFillBad &&
+                                    localStyles.autoFillButtonDisabled,
                                 ]}
-                                disabled={!isPlus}
+                                disabled={!canAutoFillBad}
                                 accessibilityLabel={t("Auto-fill Traits")}
                               >
                                 <LinearGradient
@@ -1174,6 +1215,8 @@ export default function CardTraits({ navigation, route }) {
         visible={showSettings}
         onClose={() => setShowSettings(false)}
         onOpenGameRules={() => setShowRules(true)}
+        onOpenFavorites={() => navigation.navigate("Favorites")}
+        onOpenAutoFillManager={() => navigation.navigate("AutoFillTraitManager")}
         onOpenPlus={() => {
           if (isPlus) {
             return;
@@ -1184,6 +1227,13 @@ export default function CardTraits({ navigation, route }) {
         showLeave
         onLeave={confirmLeaveGame}
         isPlus={isPlus}
+      />
+      <AutoFillTraitPickerModal
+        visible={autoFillVisible}
+        mode={autoFillMode}
+        usedTraits={trimmedTraits}
+        onSelect={handleAutoFillSelect}
+        onClose={handleAutoFillClose}
       />
       {!isPlus && (
         <PlusModal
@@ -1198,13 +1248,20 @@ export default function CardTraits({ navigation, route }) {
         visible={showRules}
         onClose={() => setShowRules(false)}
       />
-      <ModalAlert
-        visible={alertState.visible}
-        title={alertState.title}
-        message={alertState.message}
-        variant={alertState.variant}
-        onClose={() => setAlertState((current) => ({ ...current, visible: false }))}
-      />
+        <ModalAlert
+          visible={alertState.visible}
+          title={alertState.title}
+          message={alertState.message}
+          variant={alertState.variant}
+          buttons={alertState.buttons}
+          onClose={() =>
+            setAlertState((current) => ({
+              ...current,
+              visible: false,
+              buttons: undefined,
+            }))
+          }
+        />
       <Modal
         visible={guideVisible}
         transparent
@@ -1615,6 +1672,10 @@ const localStyles = StyleSheet.create({
   },
   inputWrapperNegative: {
     borderColor: "rgba(239, 68, 68, 0.35)",
+    backgroundColor: "#ffffff",
+  },
+  inputWrapperCustom: {
+    borderColor: "rgba(255, 145, 77, 0.32)",
     backgroundColor: "#ffffff",
   },
   inputWrapperError: {

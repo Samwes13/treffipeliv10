@@ -151,6 +151,17 @@ export default function JoinGame({ navigation, route }) {
       const players = gameData.players || {};
       const normalizedDesired = username.trim().toLowerCase();
       const usernameKey = toUserKey(username);
+      const isCustomMode = gameData.mode === "custom";
+      const rulesRaw = gameData.rules || [];
+      const rulesArray = Array.isArray(rulesRaw)
+        ? rulesRaw
+        : Object.values(rulesRaw || {});
+      const skipRule = rulesArray.find(
+        (rule) => rule?.id === "skip_rule" && rule?.enabled,
+      );
+      const skipUses = skipRule
+        ? Math.max(1, Number(skipRule.uses) || 1)
+        : 0;
 
       const nameInUse = Object.values(players || {}).some((player) => {
         const candidate = (player?.username || "").trim().toLowerCase();
@@ -178,13 +189,20 @@ export default function JoinGame({ navigation, route }) {
         `games/${formattedPin}/players/${usernameKey}`,
       );
 
-      await set(playersRef, {
+      const playerPayload = {
         username,
         usernameKey,
         traits: [],
         isHost: false,
         isPlus: !!isPlus,
-      });
+      };
+      if (isCustomMode) {
+        playerPayload.skipRemaining = skipUses;
+        playerPayload.skipAvailable = skipUses > 0;
+        playerPayload.decisions = {};
+      }
+
+      await set(playersRef, playerPayload);
 
       await update(ref(database, `games/${formattedPin}`), {
         lastActivityAt: serverTimestamp(),

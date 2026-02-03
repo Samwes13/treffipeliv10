@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Alert,
   View,
   Text,
   Modal,
@@ -17,6 +18,8 @@ export default function SettingsModal({
   onClose,
   onOpenPlus,
   onOpenGameRules,
+  onOpenFavorites,
+  onOpenAutoFillManager,
   showLeave = false,
   onLeave,
   isPlus = false,
@@ -30,6 +33,34 @@ export default function SettingsModal({
     if (typeof onOpenGameRules === "function") {
       onClose && onClose();
       onOpenGameRules();
+      return;
+    }
+    onClose && onClose();
+  };
+
+  const handleOpenFavorites = () => {
+    if (!isPlusMember) {
+      Alert.alert(
+        t("Plus"),
+        t("You need a Plus subscription to use favorites."),
+        [
+          {
+            text: t("Open Plus"),
+            onPress: () => {
+              if (typeof onOpenPlus === "function") {
+                onClose && onClose();
+                onOpenPlus();
+              }
+            },
+          },
+          { text: t("OK") },
+        ],
+      );
+      return;
+    }
+    if (typeof onOpenFavorites === "function") {
+      onClose && onClose();
+      onOpenFavorites();
       return;
     }
     onClose && onClose();
@@ -69,6 +100,22 @@ export default function SettingsModal({
               />
               <Text style={styles.howToPlayText}>{t("How to play")}</Text>
             </MotionPressable>
+
+            {typeof onOpenFavorites === "function" && (
+              <MotionPressable
+                activeOpacity={0.9}
+                style={styles.favoritesButton}
+                onPress={handleOpenFavorites}
+              >
+                <Ionicons
+                  name="star-outline"
+                  size={18}
+                  color={theme.metaLabel}
+                  style={styles.favoritesIcon}
+                />
+                <Text style={styles.favoritesText}>{t("Favorites")}</Text>
+              </MotionPressable>
+            )}
 
             {showLeave && (
               <MotionPressable
@@ -110,6 +157,7 @@ export default function SettingsModal({
                 <Text style={styles.settingsPrimaryText}>{plusLabel}</Text>
               </LinearGradient>
             </MotionPressable>
+
           </View>
         </View>
 
@@ -211,6 +259,26 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   howToPlayText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.metaLabel,
+  },
+  favoritesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: theme.accentMuted,
+    borderWidth: 1,
+    borderColor: theme.accentMutedBorder,
+    marginBottom: 12,
+  },
+  favoritesIcon: {
+    marginRight: 8,
+  },
+  favoritesText: {
     fontSize: 15,
     fontWeight: "700",
     color: theme.metaLabel,

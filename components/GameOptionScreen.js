@@ -24,10 +24,11 @@ import theme from "../utils/theme";
 import getLogoSource from "../utils/logo";
 import SettingsModal from "./SettingsModal";
 import PlusModal from "./PlusModal";
+import ModalAlert from "./ModalAlert";
 import { saveSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
-import { loadPlusModalHidden } from "../utils/plusModalPreference";
 import { loadHowToPlayHidden } from "../utils/howToPlayPreference";
+import { generateUniqueGamePin } from "../utils/gamePin";
 import MotionPressable from "./MotionPressable";
 import MotionFloat from "./MotionFloat";
 
@@ -35,6 +36,7 @@ export default function GameOptionsScreen({ route, navigation }) {
   const rawUsername = route.params?.username ?? "";
   const trimmedUsername = rawUsername.trim();
   const playerName = trimmedUsername || rawUsername;
+  const showCustomMode = route.params?.isHost !== false;
   const { t, language } = useLanguage();
   const logoSource = getLogoSource(language);
   const fallbackDisplayName = t("player");
@@ -45,6 +47,14 @@ export default function GameOptionsScreen({ route, navigation }) {
   const [showRules, setShowRules] = useState(false);
   const [showSubscription, setShowSubscription] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCustomInfo, setShowCustomInfo] = useState(false);
+  const [alertState, setAlertState] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    variant: "info",
+    buttons: null,
+  });
   const planName = "Plus";
   const planPrice = "2,99 EUR";
   const { isPlus, restorePurchases } = usePlus();
@@ -66,6 +76,14 @@ export default function GameOptionsScreen({ route, navigation }) {
     navigation.navigate("EnterUsername");
   };
 
+  const showAlert = (updates) =>
+    setAlertState((prev) => ({
+      ...prev,
+      visible: true,
+      buttons: null,
+      ...updates,
+    }));
+
   const navigateToTraits = async (params) => {
     const hidden = await loadHowToPlayHidden();
     if (hidden) {
@@ -81,27 +99,36 @@ export default function GameOptionsScreen({ route, navigation }) {
       return;
     }
 
-    const gamepin = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const usernameKey = toUserKey(playerName);
-    update(ref(database, `games/${gamepin}`), {
-      host: playerName,
-      gamepin: gamepin,
-      isGameStarted: false,
-      lastActivityAt: serverTimestamp(),
-      players: {
-        [usernameKey]: {
-          username: playerName,
-          usernameKey,
-          traits: [],
-          isHost: true,
-          isPlus: !!isPlus,
+    try {
+      const gamepin = await generateUniqueGamePin();
+      const usernameKey = toUserKey(playerName);
+      await update(ref(database, `games/${gamepin}`), {
+        host: playerName,
+        gamepin,
+        isGameStarted: false,
+        lastActivityAt: serverTimestamp(),
+        players: {
+          [usernameKey]: {
+            username: playerName,
+            usernameKey,
+            traits: [],
+            isHost: true,
+            isPlus: !!isPlus,
+          },
         },
-      },
-    });
+      });
 
-    await saveSession(playerName, gamepin);
+      await saveSession(playerName, gamepin);
 
-    await navigateToTraits({ username: playerName, gamepin });
+      await navigateToTraits({ username: playerName, gamepin });
+    } catch (error) {
+      console.error("Failed to create game:", error);
+      showAlert({
+        title: t("Saving Failed"),
+        message: t("Something went wrong. Please try again shortly."),
+        variant: "error",
+      });
+    }
   };
 
   const joinGame = () => {
@@ -113,22 +140,22 @@ export default function GameOptionsScreen({ route, navigation }) {
     navigation.navigate("JoinGame", { username: playerName });
   };
 
-  useEffect(() => {
-    let mounted = true;
-    const syncPlusModal = async () => {
-      const hidden = await loadPlusModalHidden();
-      if (!mounted) {
-        return;
-      }
-      if (!hidden) {
-        setShowSubscription(!isPlus);
-      }
-    };
+  const openCustomMode = () => {
+    if (!playerName) {
+      handleMissingName();
+      return;
+    }
 
-    syncPlusModal();
-    return () => {
-      mounted = false;
-    };
+    if (!isPlus) {
+      setShowCustomInfo(true);
+      return;
+    }
+
+    navigation.navigate("CustomModeSettings", { username: playerName });
+  };
+
+  useEffect(() => {
+    setShowSubscription(!isPlus);
   }, [isPlus]);
 
   return (
@@ -161,6 +188,8 @@ export default function GameOptionsScreen({ route, navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenGameRules={() => setShowRules(true)}
+          onOpenFavorites={() => navigation.navigate("Favorites")}
+          onOpenAutoFillManager={() => navigation.navigate("AutoFillTraitManager")}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -180,6 +209,119 @@ export default function GameOptionsScreen({ route, navigation }) {
             onRestorePurchases={handleRestorePurchases}
           />
         )}
+
+        {showCustomInfo && (
+          <View style={localStyles.customInfoBackdrop}>
+            <View style={localStyles.customInfoCard}>
+              <LinearGradient
+                colors={["#ff66c4", "#ff914d"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={localStyles.customInfoHeader}
+              >
+                <View style={localStyles.customInfoHeaderRow}>
+                  <View style={localStyles.customInfoIconWrap}>
+                    <Ionicons name="sparkles" size={18} color="#ffffff" />
+                  </View>
+                  <Text style={localStyles.customInfoTitle}>
+                    {t("Custom game is a Plus feature")}
+                  </Text>
+                </View>
+                <Text style={localStyles.customInfoSubtitle}>
+                  {t("Create your own rounds with special rules.")}
+                </Text>
+              </LinearGradient>
+
+              <View style={localStyles.customInfoBody}>
+                <Text style={localStyles.customInfoLead}>
+                  {t("Custom game requires Plus to create.")}
+                </Text>
+                <Text style={localStyles.customInfoNote}>
+                  {t(
+                    "Only one player needs Plus to create the game. Others can join for free.",
+                  )}
+                </Text>
+
+                <Text style={localStyles.customInfoSectionTitle}>
+                  {t("What you can do in Custom game")}
+                </Text>
+                <View style={localStyles.customInfoBullet}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#22c55e"
+                    style={localStyles.customInfoBulletIcon}
+                  />
+                  <Text style={localStyles.customInfoBulletText}>
+                    {t("Set the number of dates for the session.")}
+                  </Text>
+                </View>
+                <View style={localStyles.customInfoBullet}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#22c55e"
+                    style={localStyles.customInfoBulletIcon}
+                  />
+                  <Text style={localStyles.customInfoBulletText}>
+                    {t("Pick rule twists like majority, loudest, or reverse.")}
+                  </Text>
+                </View>
+                <View style={localStyles.customInfoBullet}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#22c55e"
+                    style={localStyles.customInfoBulletIcon}
+                  />
+                  <Text style={localStyles.customInfoBulletText}>
+                    {t("Add your own custom rule text.")}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={localStyles.customInfoActions}>
+                <MotionPressable
+                  style={localStyles.customInfoSecondary}
+                  onPress={() => setShowCustomInfo(false)}
+                >
+                  <Text style={localStyles.customInfoSecondaryText}>
+                    {t("Close")}
+                  </Text>
+                </MotionPressable>
+                <MotionPressable
+                  style={localStyles.customInfoPrimary}
+                  onPress={() => {
+                    setShowCustomInfo(false);
+                    setShowSubscription(true);
+                  }}
+                >
+                  <LinearGradient
+                    colors={theme.primaryButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={localStyles.customInfoPrimaryInner}
+                  >
+                    <Text style={localStyles.customInfoPrimaryText}>
+                      {t("Open Plus")}
+                    </Text>
+                  </LinearGradient>
+                </MotionPressable>
+              </View>
+            </View>
+          </View>
+        )}
+
+        <ModalAlert
+          visible={alertState.visible}
+          title={alertState.title}
+          message={alertState.message}
+          variant={alertState.variant}
+          buttons={alertState.buttons}
+          onClose={() =>
+            setAlertState((current) => ({ ...current, visible: false }))
+          }
+        />
 
         <ScrollView
           style={localStyles.scroll}
@@ -269,6 +411,55 @@ export default function GameOptionsScreen({ route, navigation }) {
                     </View>
                   </LinearGradient>
                 </MotionPressable>
+
+                {showCustomMode && (
+                  <MotionPressable
+                    activeOpacity={0.9}
+                    style={localStyles.customAction}
+                      onPress={openCustomMode}
+                    >
+                      <View style={localStyles.customActionRow}>
+                        <View style={localStyles.actionTextBlock}>
+                          <View style={localStyles.customTitleRow}>
+                            <Text style={localStyles.customActionTitle}>
+                              {t("Custom Mode")}
+                            </Text>
+                          <View
+                            style={[
+                              localStyles.customPlusBadge,
+                              isPlus && localStyles.customPlusBadgeActive,
+                            ]}
+                          >
+                            <Ionicons
+                              name="sparkles"
+                              size={12}
+                              color={isPlus ? "#166534" : theme.metaLabel}
+                              style={localStyles.customPlusBadgeIcon}
+                            />
+                            <Text
+                              style={[
+                                localStyles.customPlusBadgeText,
+                                isPlus && localStyles.customPlusBadgeTextActive,
+                              ]}
+                            >
+                              {t("Plus")}
+                            </Text>
+                          </View>
+                          </View>
+                          <Text style={localStyles.customActionSubtitle}>
+                            {t("Host sets the rounds and twists for the game.")}
+                          </Text>
+                        </View>
+                      <View style={localStyles.customIcon}>
+                        <Ionicons
+                          name="options-outline"
+                          size={22}
+                          color={theme.accentSecondary}
+                        />
+                      </View>
+                    </View>
+                  </MotionPressable>
+                )}
 
                 <MotionPressable
                   activeOpacity={0.88}
@@ -540,6 +731,72 @@ const localStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.accentMutedBorder,
     backgroundColor: theme.accentMuted,
+    marginTop: 16,
+  },
+  customAction: {
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 102, 196, 0.25)",
+    backgroundColor: "rgba(255, 102, 196, 0.12)",
+    marginTop: 16,
+  },
+  customActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  customTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  customActionTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: theme.metaLabel,
+  },
+  customPlusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 145, 77, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.35)",
+  },
+  customPlusBadgeActive: {
+    backgroundColor: "rgba(34, 197, 94, 0.16)",
+    borderColor: "rgba(34, 197, 94, 0.4)",
+  },
+  customPlusBadgeIcon: {
+    marginRight: 4,
+  },
+  customPlusBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: theme.metaLabel,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  customPlusBadgeTextActive: {
+    color: "#166534",
+  },
+  customActionSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "rgba(255, 102, 196, 0.75)",
+  },
+  customIcon: {
+    marginLeft: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 102, 196, 0.16)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   secondaryActionRow: {
     flexDirection: "row",
@@ -782,6 +1039,139 @@ const localStyles = StyleSheet.create({
     color: theme.helperText,
     fontSize: 14,
     fontWeight: "600",
+  },
+  customInfoBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
+    backgroundColor: "rgba(16, 8, 22, 0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  customInfoCard: {
+    width: "100%",
+    maxWidth: 460,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.98)",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+    shadowColor: "#13093A",
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.35,
+    shadowRadius: 28,
+    elevation: 12,
+  },
+  customInfoHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  customInfoHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  customInfoIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  customInfoTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    color: "#ffffff",
+  },
+  customInfoSubtitle: {
+    marginTop: 6,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.92)",
+  },
+  customInfoBody: {
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: "rgba(255, 236, 247, 0.55)",
+  },
+  customInfoLead: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: theme.bodyText,
+  },
+  customInfoNote: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.helperText,
+    fontWeight: "600",
+  },
+  customInfoSectionTitle: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: theme.metaLabel,
+  },
+  customInfoBullet: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 8,
+  },
+  customInfoBulletIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  customInfoBulletText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.bodyMuted,
+    fontWeight: "600",
+  },
+  customInfoActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    paddingTop: 14,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    gap: 12,
+  },
+  customInfoSecondary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.accentMutedBorder,
+    backgroundColor: theme.accentMuted,
+    alignItems: "center",
+  },
+  customInfoSecondaryText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: theme.metaLabel,
+  },
+  customInfoPrimary: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  customInfoPrimaryInner: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  customInfoPrimaryText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#ffffff",
   },
 });
 

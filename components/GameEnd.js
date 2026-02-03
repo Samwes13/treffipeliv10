@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   BackHandler,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ref, update, remove, get, runTransaction } from "firebase/database";
@@ -20,7 +21,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { toUserKey } from "../utils/userKey";
 import getLogoSource from "../utils/logo";
 import useInterstitialAd from "../hooks/useInterstitialAd";
-import { clearSession } from "../utils/session";
+import { clearSession, loadSession } from "../utils/session";
 import { usePlus } from "../contexts/PlusContext";
 import MotionPressable from "./MotionPressable";
 import MotionFloat from "./MotionFloat";
@@ -40,9 +41,18 @@ if (Platform.OS === "web") {
 export default function GameEnd({ route, navigation }) {
   const { gamepin, username } = route.params || {};
   const [players, setPlayers] = useState([]);
+  const [gameMode, setGameMode] = useState("default");
+  const [roundsTotal, setRoundsTotal] = useState(6);
+  const [turnHistory, setTurnHistory] = useState([]);
+  const [expandedKey, setExpandedKey] = useState(null);
+  const [resolvedSession, setResolvedSession] = useState(null);
   const { t, language } = useLanguage();
   const { isPlus } = usePlus();
   const logoSource = getLogoSource(language);
+  const isCustomMode = gameMode === "custom";
+  const effectiveGamepin = gamepin || resolvedSession?.gamepin || "";
+  const effectiveUsername = username || resolvedSession?.username || "";
+  const hasParams = Boolean(effectiveGamepin && effectiveUsername);
 
   const longestLeaders = useMemo(() => {
     const sorted = [...players].sort(
@@ -62,15 +72,49 @@ export default function GameEnd({ route, navigation }) {
     return sorted;
   }, [players]);
 
-  const champion = longestLeaders[0];
+  const champion = isCustomMode ? null : longestLeaders[0];
 
   const totalMatchedTraits = useMemo(
     () => players.reduce((sum, player) => sum + (player.accepted || 0), 0),
     [players],
   );
 
-  const highlightStats = useMemo(
-    () => [
+  const highlightStats = useMemo(() => {
+    if (isCustomMode) {
+      return [
+        {
+          key: "rounds",
+          label: t("Rounds"),
+          value: String(roundsTotal),
+          icon: "repeat-outline",
+          accent: "#FFD166",
+          gradient: ["rgba(255, 249, 235, 0.98)", "rgba(255, 233, 218, 0.92)"],
+          borderColor: "rgba(255, 209, 102, 0.45)",
+          iconBackground: "rgba(255, 209, 102, 0.25)",
+        },
+        {
+          key: "players",
+          label: t("Players"),
+          value: String(players.length),
+          icon: "people-outline",
+          accent: "#8DD9FF",
+          gradient: ["rgba(236, 248, 255, 0.98)", "rgba(226, 236, 255, 0.92)"],
+          borderColor: "rgba(141, 217, 255, 0.45)",
+          iconBackground: "rgba(141, 217, 255, 0.25)",
+        },
+        {
+          key: "decisions",
+          label: t("Decisions"),
+          value: String(turnHistory.length),
+          icon: "checkmark-circle-outline",
+          accent: "#FF7EC8",
+          gradient: ["rgba(255, 236, 246, 0.98)", "rgba(255, 225, 240, 0.92)"],
+          borderColor: "rgba(255, 126, 200, 0.45)",
+          iconBackground: "rgba(255, 126, 200, 0.25)",
+        },
+      ];
+    }
+    return [
       {
         key: "winning",
         label: t("Winning date"),
@@ -103,26 +147,107 @@ export default function GameEnd({ route, navigation }) {
         borderColor: "rgba(255, 126, 200, 0.45)",
         iconBackground: "rgba(255, 126, 200, 0.25)",
       },
-    ],
-    [players.length, champion?.treffit, totalMatchedTraits, t],
-  );
-  const heroTitle = champion
+    ];
+  }, [
+    champion?.treffit,
+    isCustomMode,
+    players.length,
+    roundsTotal,
+    t,
+    totalMatchedTraits,
+    turnHistory.length,
+  ]);
+  const heroTitle = isCustomMode
+    ? t("Custom Mode recap")
+    : champion
     ? t("{{name}} claimed the crown", { name: champion.username })
     : t("Thanks for playing Treffipeli");
-  const heroSubtitle = champion
+  const heroSubtitle = isCustomMode
+    ? t("Here are the traits and decisions from each round.")
+    : champion
     ? t("Winning date: {{number}}. Ready for another round?", {
         number: champion.treffit,
       })
     : t(
         "Create a new game or head back to the lobby - the next round awaits!",
       );
-  const heroMetaText = champion
+  const heroMetaText = isCustomMode
+    ? t("{{count}} decisions", { count: turnHistory.length })
+    : champion
     ? t("{{count}} accepted traits", { count: champion.accepted || 0 })
     : "";
 
-  if (!gamepin || !username) {
+  const customSummary = useMemo(() => {
+    if (!isCustomMode) {
+      return [];
+    }
+    const byPlayer = {};
+    players.forEach((player) => {
+      const name = player?.username || t("Player");
+      if (!byPlayer[name]) {
+        byPlayer[name] = { username: name, rounds: [] };
+      }
+    });
+    (turnHistory || []).forEach((entry) => {
+      const name = entry?.playerName || entry?.playerKey || t("Player");
+      if (!byPlayer[name]) {
+        byPlayer[name] = { username: name, rounds: [] };
+      }
+      byPlayer[name].rounds.push({
+        round: Number(entry?.round) || 0,
+        trait: entry?.trait || "",
+        decision: entry?.decision || "",
+      });
+    });
+    return Object.values(byPlayer)
+      .map((player) => ({
+        ...player,
+        rounds: player.rounds.sort((a, b) => a.round - b.round),
+      }))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [isCustomMode, players, t, turnHistory]);
+
+  const customSummaryByName = useMemo(() => {
+    const map = {};
+    customSummary.forEach((entry) => {
+      if (entry?.username) {
+        map[entry.username] = entry;
+      }
+    });
+    return map;
+  }, [customSummary]);
+
+  const getDecisionMeta = (decision) => {
+    if (decision === "YES") {
+      return { label: t("Keep"), style: ge.decisionYes };
+    }
+    if (decision === "NO") {
+      return { label: t("Skip"), style: ge.decisionNo };
+    }
+    if (decision === "SKIPPED") {
+      return { label: t("Skipped"), style: ge.decisionSkip };
+    }
+    return { label: t("Unknown"), style: ge.decisionSkip };
+  };
+
+  if (!hasParams) {
     console.error("GameEnd: Missing gamepin or username!");
-    return null;
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient
+          colors={["#ff66c4", "#ffde59"]}
+          style={styles.background}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          pointerEvents="none"
+        />
+        <SafeAreaView style={ge.safeArea} edges={["top", "bottom"]}>
+          <View style={ge.loadingWrap}>
+            <Text style={ge.loadingText}>{t("Loading…")}</Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
   }
 
   useFocusEffect(
@@ -148,17 +273,43 @@ export default function GameEnd({ route, navigation }) {
   );
 
   useEffect(() => {
-    clearSession();
-  }, []);
+    if (hasParams) {
+      clearSession();
+    }
+  }, [hasParams]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (gamepin && username) {
+      return () => {
+        isMounted = false;
+      };
+    }
+    (async () => {
+      const session = await loadSession();
+      if (!isMounted) {
+        return;
+      }
+      if (session?.gamepin && session?.username) {
+        setResolvedSession(session);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [gamepin, username]);
 
   // Peli poistetaan 5 minuutin kuluttua
   useEffect(() => {
+    if (!effectiveGamepin) {
+      return;
+    }
     const deleteGameTimeout = setTimeout(
       async () => {
-        const gameRef = ref(database, `games/${gamepin}`);
+        const gameRef = ref(database, `games/${effectiveGamepin}`);
         try {
           await remove(gameRef);
-          console.log(`Peli ${gamepin} poistettu tietokannasta.`);
+          console.log(`Peli ${effectiveGamepin} poistettu tietokannasta.`);
         } catch (error) {
           console.error("Virhe pelin poistamisessa:", error);
         }
@@ -167,7 +318,7 @@ export default function GameEnd({ route, navigation }) {
     );
 
     return () => clearTimeout(deleteGameTimeout);
-  }, [gamepin]);
+  }, [effectiveGamepin]);
 
   useInterstitialAd({
     iosAdUnitId: IOS_INTERSTITIAL_AD_UNIT,
@@ -175,17 +326,31 @@ export default function GameEnd({ route, navigation }) {
     screenName: "GameEnd",
     autoShow: true,
     showDelayMs: 800,
-    enabled: Boolean(gamepin && username) && !isPlus,
+    enabled: Boolean(effectiveGamepin && effectiveUsername) && !isPlus,
   });
 
-  // Load leaderboard once
+  // Load summary once
   useEffect(() => {
+    if (!effectiveGamepin) {
+      return;
+    }
     (async () => {
       try {
-        const playersSnap = await get(
-          ref(database, `games/${gamepin}/players`),
-        );
-        const playersVal = playersSnap.exists() ? playersSnap.val() : {};
+        const gameSnap = await get(ref(database, `games/${effectiveGamepin}`));
+        if (!gameSnap.exists()) {
+          return;
+        }
+        const gameData = gameSnap.val() || {};
+        setGameMode(gameData.mode || "default");
+        const roundsValue = Number(gameData.roundsTotal) || 6;
+        setRoundsTotal(roundsValue);
+        const historyRaw = gameData.turnHistory || {};
+        const historyArray = Array.isArray(historyRaw)
+          ? historyRaw
+          : Object.values(historyRaw || {});
+        setTurnHistory(historyArray);
+
+        const playersVal = gameData.players || {};
         const arr = Object.keys(playersVal).map((key) => {
           const p = playersVal[key] || {};
           const acceptedTraitsCount = Array.isArray(p.acceptedTraits)
@@ -206,8 +371,7 @@ export default function GameEnd({ route, navigation }) {
             Number.isFinite(maxAcceptedRaw) ? maxAcceptedRaw : 0,
             acceptedTraitsCount,
           );
-          // Date numbering is 1-based, so add 1 to the accepted streak.
-          const treffit = Math.min(maxAccepted + 1, 6);
+          const treffit = Math.min(maxAccepted + 1, roundsValue);
           const skipCount = Number.isFinite(Number(p.skipCount))
             ? Number(p.skipCount)
             : 0;
@@ -224,12 +388,15 @@ export default function GameEnd({ route, navigation }) {
         console.error("Leaderboard load error", e);
       }
     })();
-  }, [gamepin]);
+  }, [effectiveGamepin]);
 
   // Replay: first presser creates new game as host; others join it; go straight to CardTraits
   const handleReplay = async () => {
     try {
-      const replayRef = ref(database, `games/${gamepin}/replay`);
+      if (!effectiveGamepin || !effectiveUsername) {
+        return;
+      }
+      const replayRef = ref(database, `games/${effectiveGamepin}/replay`);
       const candidatePin = Math.random().toString(36).substring(2, 8).toUpperCase();
 
       const { committed, snapshot } = await runTransaction(
@@ -240,7 +407,7 @@ export default function GameEnd({ route, navigation }) {
           }
           return {
             newGamepin: candidatePin,
-            host: username,
+            host: effectiveUsername,
             createdAt: Date.now(),
           };
         },
@@ -259,7 +426,7 @@ export default function GameEnd({ route, navigation }) {
       const created =
         committed &&
         replayData.newGamepin === candidatePin &&
-        hostUser === username;
+        hostUser === effectiveUsername;
 
       if (created) {
         const hostKeySafe = toUserKey(hostUser);
@@ -279,26 +446,29 @@ export default function GameEnd({ route, navigation }) {
         );
       }
 
-      const keySafeUsername = toUserKey(username);
-      const isHost = hostUser === username;
+      const keySafeUsername = toUserKey(effectiveUsername);
+      const isHost = hostUser === effectiveUsername;
       await update(
         ref(database, `games/${targetPin}/players/${keySafeUsername}`),
         {
-          username,
+          username: effectiveUsername,
           usernameKey: keySafeUsername,
           traits: [],
           isHost,
         },
       );
 
-      navigation.navigate("CardTraits", { username, gamepin: targetPin });
+      navigation.navigate("CardTraits", {
+        username: effectiveUsername,
+        gamepin: targetPin,
+      });
     } catch (error) {
       console.error("Virhe Replay-napissa:", error);
     }
   };
 
   const handleExit = () => {
-    navigation.navigate("GameOptionScreen", { username });
+    navigation.navigate("GameOptionScreen", { username: effectiveUsername });
   };
 
   return (
@@ -348,7 +518,7 @@ export default function GameEnd({ route, navigation }) {
               </View>
               <Text style={ge.heroTitle}>{heroTitle}</Text>
               <Text style={ge.heroSubtitle}>{heroSubtitle}</Text>
-              {champion ? (
+              {heroMetaText ? (
                 <View style={ge.heroMetaRow}>
                   <Ionicons
                     name="ribbon-outline"
@@ -407,235 +577,440 @@ export default function GameEnd({ route, navigation }) {
             })}
           </View>
 
-          <View style={ge.leaderboardCard}>
-            <View style={ge.sectionHeaderRow}>
-              <View style={ge.sectionLabelWrap}>
-                <Ionicons
-                  name="podium-outline"
-                  size={18}
-                  color={theme.accentPrimary}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={ge.sectionLabel}>{t("Longest Dates")}</Text>
-              </View>
-              {champion ? (
-                <View style={ge.sectionChip}>
+          <>
+            <View style={ge.leaderboardCard}>
+              <View style={ge.sectionHeaderRow}>
+                <View style={ge.sectionLabelWrap}>
                   <Ionicons
-                    name="trophy-outline"
-                    size={14}
-                    color="#FFD700"
-                    style={{ marginRight: 6 }}
+                    name="podium-outline"
+                    size={18}
+                    color={theme.accentPrimary}
+                    style={{ marginRight: 8 }}
                   />
-                  <Text style={ge.sectionChipText}>{t("Winner")}</Text>
+                  <Text style={ge.sectionLabel}>{t("Longest Dates")}</Text>
                 </View>
-              ) : null}
+                {champion ? (
+                  <View style={ge.sectionChip}>
+                    <Ionicons
+                      name="trophy-outline"
+                      size={14}
+                      color="#FFD700"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={ge.sectionChipText}>{t("Winner")}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {longestLeaders.length ? (
+                longestLeaders.map((player, index) => {
+                  const matchLabel =
+                    player.accepted === 1 ? t("match") : t("matches");
+                  const rank = index + 1;
+                  const isGold = rank === 1;
+                  const isSilver = rank === 2;
+                  const isBronze = rank === 3;
+                  const expandKey = `longest:${player.username}`;
+                  const isExpanded = isCustomMode && expandedKey === expandKey;
+                  const rounds =
+                    customSummaryByName[player.username]?.rounds || [];
+                  return (
+                    <View key={`${player.username}-longest-${index}`}>
+                      <View
+                        style={[
+                          ge.leaderRow,
+                          (isGold || isSilver || isBronze) && ge.leaderRowTop,
+                          isGold && ge.leaderRowChampion,
+                          isSilver && ge.leaderRowSilver,
+                          isBronze && ge.leaderRowBronze,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            ge.rankBadge,
+                            isGold && ge.rankBadgeChampion,
+                            isSilver && ge.rankBadgeSilver,
+                            isBronze && ge.rankBadgeBronze,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              ge.rankText,
+                              isGold && ge.rankTextChampion,
+                              isSilver && ge.rankTextSilver,
+                              isBronze && ge.rankTextBronze,
+                            ]}
+                          >
+                            #{rank}
+                          </Text>
+                        </View>
+                        {isCustomMode ? (
+                          <Pressable
+                            onPress={() =>
+                              setExpandedKey((prev) =>
+                                prev === expandKey ? null : expandKey,
+                              )
+                            }
+                            style={ge.leaderInfoPressable}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("Round summary")}
+                          >
+                            <View style={ge.leaderInfo}>
+                              <View style={ge.leaderNameRow}>
+                                <Text
+                                  style={[
+                                    ge.leaderName,
+                                    isGold && ge.leaderNameChampion,
+                                    isSilver && ge.leaderNameSilver,
+                                    isBronze && ge.leaderNameBronze,
+                                  ]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  {player.username}
+                                </Text>
+                                <Ionicons
+                                  name={
+                                    isExpanded
+                                      ? "chevron-up-outline"
+                                      : "chevron-down-outline"
+                                  }
+                                  size={16}
+                                  color={theme.metaLabel}
+                                  style={ge.leaderChevron}
+                                />
+                              </View>
+                              <Text
+                                style={ge.leaderMeta}
+                                numberOfLines={2}
+                                ellipsizeMode="tail"
+                              >
+                                {player.accepted || 0} {matchLabel}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        ) : (
+                          <View style={ge.leaderInfo}>
+                            <Text
+                              style={[
+                                ge.leaderName,
+                                isGold && ge.leaderNameChampion,
+                                isSilver && ge.leaderNameSilver,
+                                isBronze && ge.leaderNameBronze,
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {player.username}
+                            </Text>
+                            <Text
+                              style={ge.leaderMeta}
+                              numberOfLines={2}
+                              ellipsizeMode="tail"
+                            >
+                              {player.accepted || 0} {matchLabel}
+                            </Text>
+                          </View>
+                        )}
+                        <View
+                          style={[
+                            ge.scorePill,
+                            isGold && ge.scorePillChampion,
+                            isSilver && ge.scorePillSilver,
+                            isBronze && ge.scorePillBronze,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              ge.scoreText,
+                              isGold && ge.scoreTextChampion,
+                              isSilver && ge.scoreTextSilver,
+                              isBronze && ge.scoreTextBronze,
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="clip"
+                          >
+                            {t("Date {{number}}", { number: player.treffit })}
+                          </Text>
+                        </View>
+                      </View>
+                      {isCustomMode && isExpanded && (
+                        <View style={ge.leaderExpandCard}>
+                          <View style={ge.leaderExpandHeader}>
+                            <Ionicons
+                              name="list-outline"
+                              size={16}
+                              color={theme.accentPrimary}
+                              style={{ marginRight: 6 }}
+                            />
+                            <Text style={ge.leaderExpandTitle}>
+                              {t("Round summary")}
+                            </Text>
+                          </View>
+                          {rounds.length ? (
+                            rounds.map((round, roundIndex) => {
+                              const decisionMeta = getDecisionMeta(
+                                round.decision,
+                              );
+                              return (
+                                <View
+                                  key={`${player.username}-${round.round}-${roundIndex}`}
+                                  style={ge.roundRow}
+                                >
+                                  <View style={ge.roundBadge}>
+                                    <Text style={ge.roundBadgeText}>
+                                      {t("Round {{number}}", {
+                                        number: round.round || roundIndex + 1,
+                                      })}
+                                    </Text>
+                                  </View>
+                                  <Text style={ge.roundTrait} numberOfLines={2}>
+                                    {round.trait || t("Unknown trait")}
+                                  </Text>
+                                  <View
+                                    style={[
+                                      ge.decisionPill,
+                                      decisionMeta.style,
+                                    ]}
+                                  >
+                                    <Text style={ge.decisionText}>
+                                      {decisionMeta.label}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            })
+                          ) : (
+                            <Text style={ge.roundEmpty}>
+                              {t("No decisions recorded.")}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={ge.emptyStateWrap}>
+                  <Ionicons
+                    name="sparkles-outline"
+                    size={22}
+                    color={theme.helperText}
+                    style={{ marginBottom: 10 }}
+                  />
+                  <Text style={ge.emptyState}>
+                    {t(
+                      "The leaderboard will update as soon as players finish their rounds.",
+                    )}
+                  </Text>
+                </View>
+              )}
             </View>
 
-            {longestLeaders.length ? (
-              longestLeaders.map((player, index) => {
-                const matchLabel =
-                  player.accepted === 1 ? t("match") : t("matches");
-                const rank = index + 1;
-                const isGold = rank === 1;
-                const isSilver = rank === 2;
-                const isBronze = rank === 3;
-                return (
-                  <View
-                    key={`${player.username}-longest-${index}`}
-                    style={[
-                      ge.leaderRow,
-                      (isGold || isSilver || isBronze) && ge.leaderRowTop,
-                      isGold && ge.leaderRowChampion,
-                      isSilver && ge.leaderRowSilver,
-                      isBronze && ge.leaderRowBronze,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        ge.rankBadge,
-                        isGold && ge.rankBadgeChampion,
-                        isSilver && ge.rankBadgeSilver,
-                        isBronze && ge.rankBadgeBronze,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          ge.rankText,
-                          isGold && ge.rankTextChampion,
-                          isSilver && ge.rankTextSilver,
-                          isBronze && ge.rankTextBronze,
-                        ]}
-                      >
-                        #{rank}
-                      </Text>
-                    </View>
-                    <View style={ge.leaderInfo}>
-                      <Text
-                        style={[
-                          ge.leaderName,
-                          isGold && ge.leaderNameChampion,
-                          isSilver && ge.leaderNameSilver,
-                          isBronze && ge.leaderNameBronze,
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                      >
-                        {player.username}
-                      </Text>
-                      <Text
-                        style={ge.leaderMeta}
-                        numberOfLines={2}
-                        ellipsizeMode="tail"
-                      >
-                        {player.accepted || 0} {matchLabel}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        ge.scorePill,
-                        isGold && ge.scorePillChampion,
-                        isSilver && ge.scorePillSilver,
-                        isBronze && ge.scorePillBronze,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          ge.scoreText,
-                          isGold && ge.scoreTextChampion,
-                          isSilver && ge.scoreTextSilver,
-                          isBronze && ge.scoreTextBronze,
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="clip"
-                      >
-                        {t("Date {{number}}", { number: player.treffit })}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })
-            ) : (
-              <View style={ge.emptyStateWrap}>
-                <Ionicons
-                  name="sparkles-outline"
-                  size={22}
-                  color={theme.helperText}
-                  style={{ marginBottom: 10 }}
-                />
-                <Text style={ge.emptyState}>
-                  {t(
-                    "The leaderboard will update as soon as players finish their rounds.",
-                  )}
-                </Text>
+            <View style={[ge.leaderboardCard, ge.leaderboardSecondary]}>
+              <View style={ge.sectionHeaderRow}>
+                <View style={ge.sectionLabelWrap}>
+                  <Ionicons
+                    name="close-circle-outline"
+                    size={18}
+                    color={theme.accentPrimary}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={ge.sectionLabel}>{t("Most Skips")}</Text>
+                </View>
               </View>
-            )}
-          </View>
 
-          <View style={[ge.leaderboardCard, ge.leaderboardSecondary]}>
-            <View style={ge.sectionHeaderRow}>
-              <View style={ge.sectionLabelWrap}>
-                <Ionicons
-                  name="close-circle-outline"
-                  size={18}
-                  color={theme.accentPrimary}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={ge.sectionLabel}>{t("Most Skips")}</Text>
-              </View>
+              {skipLeaders.length ? (
+                skipLeaders.map((player, index) => {
+                  const skipLabel =
+                    player.skipCount === 1 ? t("skip") : t("skips");
+                  const rank = index + 1;
+                  const isGold = rank === 1;
+                  const isSilver = rank === 2;
+                  const isBronze = rank === 3;
+                  const expandKey = `skips:${player.username}`;
+                  const isExpanded = isCustomMode && expandedKey === expandKey;
+                  const rounds =
+                    customSummaryByName[player.username]?.rounds || [];
+                  return (
+                    <View key={`${player.username}-skips-${index}`}>
+                      <View
+                        style={[
+                          ge.leaderRow,
+                          (isGold || isSilver || isBronze) && ge.leaderRowTop,
+                          isGold && ge.leaderRowChampion,
+                          isSilver && ge.leaderRowSilver,
+                          isBronze && ge.leaderRowBronze,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            ge.rankBadge,
+                            isGold && ge.rankBadgeChampion,
+                            isSilver && ge.rankBadgeSilver,
+                            isBronze && ge.rankBadgeBronze,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              ge.rankText,
+                              isGold && ge.rankTextChampion,
+                              isSilver && ge.rankTextSilver,
+                              isBronze && ge.rankTextBronze,
+                            ]}
+                          >
+                            #{rank}
+                          </Text>
+                        </View>
+                        {isCustomMode ? (
+                          <Pressable
+                            onPress={() =>
+                              setExpandedKey((prev) =>
+                                prev === expandKey ? null : expandKey,
+                              )
+                            }
+                            style={ge.leaderInfoPressable}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("Round summary")}
+                          >
+                            <View style={ge.leaderInfo}>
+                              <View style={ge.leaderNameRow}>
+                                <Text
+                                  style={[
+                                    ge.leaderName,
+                                    isGold && ge.leaderNameChampion,
+                                    isSilver && ge.leaderNameSilver,
+                                    isBronze && ge.leaderNameBronze,
+                                  ]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  {player.username}
+                                </Text>
+                                <Ionicons
+                                  name={
+                                    isExpanded
+                                      ? "chevron-up-outline"
+                                      : "chevron-down-outline"
+                                  }
+                                  size={16}
+                                  color={theme.metaLabel}
+                                  style={ge.leaderChevron}
+                                />
+                              </View>
+                            </View>
+                          </Pressable>
+                        ) : (
+                          <View style={ge.leaderInfo}>
+                            <Text
+                              style={[
+                                ge.leaderName,
+                                isGold && ge.leaderNameChampion,
+                                isSilver && ge.leaderNameSilver,
+                                isBronze && ge.leaderNameBronze,
+                              ]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {player.username}
+                            </Text>
+                          </View>
+                        )}
+                        <View
+                          style={[
+                            ge.scorePill,
+                            isGold && ge.scorePillChampion,
+                            isSilver && ge.scorePillSilver,
+                            isBronze && ge.scorePillBronze,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              ge.scoreText,
+                              isGold && ge.scoreTextChampion,
+                              isSilver && ge.scoreTextSilver,
+                              isBronze && ge.scoreTextBronze,
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="clip"
+                          >
+                            {player.skipCount} {skipLabel}
+                          </Text>
+                        </View>
+                      </View>
+                      {isCustomMode && isExpanded && (
+                        <View style={ge.leaderExpandCard}>
+                          <View style={ge.leaderExpandHeader}>
+                            <Ionicons
+                              name="list-outline"
+                              size={16}
+                              color={theme.accentPrimary}
+                              style={{ marginRight: 6 }}
+                            />
+                            <Text style={ge.leaderExpandTitle}>
+                              {t("Round summary")}
+                            </Text>
+                          </View>
+                          {rounds.length ? (
+                            rounds.map((round, roundIndex) => {
+                              const decisionMeta = getDecisionMeta(
+                                round.decision,
+                              );
+                              return (
+                                <View
+                                  key={`${player.username}-${round.round}-${roundIndex}`}
+                                  style={ge.roundRow}
+                                >
+                                  <View style={ge.roundBadge}>
+                                    <Text style={ge.roundBadgeText}>
+                                      {t("Round {{number}}", {
+                                        number: round.round || roundIndex + 1,
+                                      })}
+                                    </Text>
+                                  </View>
+                                  <Text style={ge.roundTrait} numberOfLines={2}>
+                                    {round.trait || t("Unknown trait")}
+                                  </Text>
+                                  <View
+                                    style={[
+                                      ge.decisionPill,
+                                      decisionMeta.style,
+                                    ]}
+                                  >
+                                    <Text style={ge.decisionText}>
+                                      {decisionMeta.label}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            })
+                          ) : (
+                            <Text style={ge.roundEmpty}>
+                              {t("No decisions recorded.")}
+                            </Text>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={ge.emptyStateWrap}>
+                  <Ionicons
+                    name="hourglass-outline"
+                    size={22}
+                    color={theme.helperText}
+                    style={{ marginBottom: 10 }}
+                  />
+                  <Text style={ge.emptyState}>
+                    {t(
+                      "Skips are tracked once players start making decisions.",
+                    )}
+                  </Text>
+                </View>
+              )}
             </View>
-
-            {skipLeaders.length ? (
-              skipLeaders.map((player, index) => {
-                const skipLabel =
-                  player.skipCount === 1 ? t("skip") : t("skips");
-                const rank = index + 1;
-                const isGold = rank === 1;
-                const isSilver = rank === 2;
-                const isBronze = rank === 3;
-                return (
-                  <View
-                    key={`${player.username}-skips-${index}`}
-                    style={[
-                      ge.leaderRow,
-                      (isGold || isSilver || isBronze) && ge.leaderRowTop,
-                      isGold && ge.leaderRowChampion,
-                      isSilver && ge.leaderRowSilver,
-                      isBronze && ge.leaderRowBronze,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        ge.rankBadge,
-                        isGold && ge.rankBadgeChampion,
-                        isSilver && ge.rankBadgeSilver,
-                        isBronze && ge.rankBadgeBronze,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          ge.rankText,
-                          isGold && ge.rankTextChampion,
-                          isSilver && ge.rankTextSilver,
-                          isBronze && ge.rankTextBronze,
-                        ]}
-                      >
-                        #{rank}
-                      </Text>
-                    </View>
-                    <View style={ge.leaderInfo}>
-                      <Text
-                        style={[
-                          ge.leaderName,
-                          isGold && ge.leaderNameChampion,
-                          isSilver && ge.leaderNameSilver,
-                          isBronze && ge.leaderNameBronze,
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                      >
-                        {player.username}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        ge.scorePill,
-                        isGold && ge.scorePillChampion,
-                        isSilver && ge.scorePillSilver,
-                        isBronze && ge.scorePillBronze,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          ge.scoreText,
-                          isGold && ge.scoreTextChampion,
-                          isSilver && ge.scoreTextSilver,
-                          isBronze && ge.scoreTextBronze,
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="clip"
-                      >
-                        {player.skipCount} {skipLabel}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })
-            ) : (
-              <View style={ge.emptyStateWrap}>
-                <Ionicons
-                  name="hourglass-outline"
-                  size={22}
-                  color={theme.helperText}
-                  style={{ marginBottom: 10 }}
-                />
-                <Text style={ge.emptyState}>
-                  {t(
-                    "Skips are tracked once players start making decisions.",
-                  )}
-                </Text>
-              </View>
-            )}
-          </View>
+          </>
 
           {Platform.OS === "web" && WebBannerAd ? (
             <View style={ge.adWrap}>
@@ -644,26 +1019,28 @@ export default function GameEnd({ route, navigation }) {
           ) : null}
 
           <View style={ge.actionsRow}>
-            <MotionPressable
-              activeOpacity={0.9}
-              onPress={handleReplay}
-              style={ge.actionButton}
-            >
-              <LinearGradient
-                colors={["#FFB347", "#FF416C"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={ge.actionButtonGradient}
+            {!isCustomMode && (
+              <MotionPressable
+                activeOpacity={0.9}
+                onPress={handleReplay}
+                style={ge.actionButton}
               >
-                <Ionicons
-                  name="refresh-outline"
-                  size={20}
-                  color="#ffffff"
-                  style={ge.actionIcon}
-                />
-                <Text style={ge.actionText}>{t("Play again")}</Text>
-              </LinearGradient>
-            </MotionPressable>
+                <LinearGradient
+                  colors={["#FFB347", "#FF416C"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={ge.actionButtonGradient}
+                >
+                  <Ionicons
+                    name="refresh-outline"
+                    size={20}
+                    color="#ffffff"
+                    style={ge.actionIcon}
+                  />
+                  <Text style={ge.actionText}>{t("Play again")}</Text>
+                </LinearGradient>
+              </MotionPressable>
+            )}
             <MotionPressable
               activeOpacity={0.9}
               onPress={handleExit}
@@ -694,6 +1071,17 @@ export default function GameEnd({ route, navigation }) {
 const ge = StyleSheet.create({
   safeArea: {
     flex: 1,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  loadingText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
   },
   decorativeLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -887,6 +1275,91 @@ const ge = StyleSheet.create({
   leaderboardSecondary: {
     marginTop: 18,
   },
+  customPlayerCard: {
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: "rgba(255, 239, 248, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.2)",
+    marginBottom: 14,
+  },
+  customPlayerName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: theme.bodyText,
+    marginBottom: 10,
+  },
+  leaderExpandCard: {
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: "rgba(255, 239, 248, 0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.2)",
+    marginBottom: 12,
+  },
+  leaderExpandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  leaderExpandTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: theme.metaLabel,
+    letterSpacing: 0.4,
+  },
+  roundRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  roundBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 145, 77, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 145, 77, 0.3)",
+    marginRight: 10,
+  },
+  roundBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.metaLabel,
+  },
+  roundTrait: {
+    flex: 1,
+    fontSize: 13,
+    color: theme.bodyMuted,
+    marginRight: 10,
+  },
+  decisionPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  decisionYes: {
+    backgroundColor: "rgba(34, 197, 94, 0.2)",
+    borderColor: "rgba(34, 197, 94, 0.5)",
+  },
+  decisionNo: {
+    backgroundColor: "rgba(239, 68, 68, 0.18)",
+    borderColor: "rgba(239, 68, 68, 0.45)",
+  },
+  decisionSkip: {
+    backgroundColor: "rgba(245, 158, 11, 0.18)",
+    borderColor: "rgba(245, 158, 11, 0.45)",
+  },
+  decisionText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.bodyText,
+  },
+  roundEmpty: {
+    fontSize: 13,
+    color: theme.bodyMuted,
+  },
   sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -988,10 +1461,20 @@ const ge = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  leaderInfoPressable: {
+    flex: 1,
+  },
+  leaderNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   leaderName: {
     color: theme.bodyText,
     fontSize: 16,
     fontWeight: "600",
+  },
+  leaderChevron: {
+    marginLeft: 6,
   },
   leaderNameChampion: {
     color: "#9a3412",

@@ -8,6 +8,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  useWindowDimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,10 +17,6 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { usePlus } from "../contexts/PlusContext";
 import theme from "../utils/theme";
 import Purchases from "react-native-purchases";
-import {
-  loadPlusModalHidden,
-  savePlusModalHidden,
-} from "../utils/plusModalPreference";
 import MotionPressable from "./MotionPressable";
 
 export default function PlusModal({
@@ -31,6 +29,7 @@ export default function PlusModal({
   onRestorePurchases,
 }) {
   const { t, language } = useLanguage();
+  const { height: viewportHeight, width: viewportWidth } = useWindowDimensions();
   const { refreshPlusStatus, restorePurchases } = usePlus();
   const iosTermsUrl =
     "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
@@ -42,7 +41,7 @@ export default function PlusModal({
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [purchaseInProgress, setPurchaseInProgress] = useState(false);
   const [restoreInProgress, setRestoreInProgress] = useState(false);
-  const [hideNextTime, setHideNextTime] = useState(false);
+  const [redeemInProgress, setRedeemInProgress] = useState(false);
 
   const openLink = async (url) => {
     try {
@@ -56,6 +55,9 @@ export default function PlusModal({
   };
 
   const purchaseDisabled = purchaseInProgress || loadingPrice || !selectedPackage;
+  const cardMaxHeight = Math.floor(viewportHeight * 0.92);
+  const compactLayout = viewportWidth < 360;
+  const bodyMaxHeight = Math.max(220, cardMaxHeight - 170);
 
   const packageLabel = (pkgType) => {
     const type = (pkgType || "").toUpperCase();
@@ -90,6 +92,71 @@ export default function PlusModal({
     return "";
   };
 
+  const periodSuffix = (pkgType) => {
+    const type = (pkgType || "").toUpperCase();
+    if (type === "WEEKLY") {
+      return "/vk";
+    }
+    if (type === "MONTHLY") {
+      return "/kk";
+    }
+    return "";
+  };
+
+  const packagePeriodUnit = (pkgType) => {
+    const type = (pkgType || "").toUpperCase();
+    if (type === "WEEKLY") {
+      return "WEEK";
+    }
+    if (type === "MONTHLY") {
+      return "MONTH";
+    }
+    return null;
+  };
+
+  const getIntroPriceString = (pkg) => {
+    const product = pkg?.product;
+    if (!product) {
+      return "";
+    }
+
+    if (Platform.OS === "android") {
+      const introPhase = product?.defaultOption?.introPhase;
+      const expectedUnit = packagePeriodUnit(pkg?.packageType);
+      const phaseUnit = introPhase?.billingPeriod?.unit || null;
+      const phasePrice = introPhase?.price?.formatted || "";
+      if (!introPhase || !phasePrice) {
+        return "";
+      }
+      if (!expectedUnit || !phaseUnit || expectedUnit === phaseUnit) {
+        return phasePrice;
+      }
+      return "";
+    }
+
+    const iosIntro = product?.introPrice || product?.introductoryPrice || null;
+    return iosIntro?.priceString || iosIntro?.formattedPrice || "";
+  };
+
+  const packageDisplayPrice = (pkg) => {
+    const introPrice = getIntroPriceString(pkg);
+    if (introPrice) {
+      return introPrice;
+    }
+    return pkg?.product?.priceString || "";
+  };
+
+  const packageCaption = (pkg) => {
+    const regularPrice = pkg?.product?.priceString || "";
+    const introPrice = getIntroPriceString(pkg);
+    if (!regularPrice || !introPrice) {
+      return billingLabel(pkg?.packageType) || packageLabel(pkg?.packageType);
+    }
+    const thenWord = language === "fi" ? "Sitten" : "Then";
+    const suffix = periodSuffix(pkg?.packageType);
+    return `${thenWord} ${regularPrice}${suffix}`;
+  };
+
   const selectedPlanName = selectedPackage
     ? packageName(selectedPackage.packageType)
     : "";
@@ -105,8 +172,8 @@ export default function PlusModal({
       return;
     }
     setSelectedPackage(pkg);
-    setDisplayPrice(pkg?.product?.priceString || "");
-    setDisplayCaption(packageLabel(pkg?.packageType));
+    setDisplayPrice(packageDisplayPrice(pkg));
+    setDisplayCaption(packageCaption(pkg));
   };
 
   const getHasPlus = (info) => {
@@ -176,6 +243,40 @@ export default function PlusModal({
       );
     } finally {
       setRestoreInProgress(false);
+    }
+  };
+
+  const handleRedeemPromoCode = async () => {
+    if (redeemInProgress) {
+      return;
+    }
+    setRedeemInProgress(true);
+    try {
+      if (Platform.OS === "ios") {
+        await Purchases.presentCodeRedemptionSheet();
+        return;
+      }
+      if (Platform.OS === "android") {
+        const redeemUrl = "https://play.google.com/redeem";
+        await openLink(redeemUrl);
+        Alert.alert(
+          t("Notice"),
+          t("Redeem your code in Google Play, then return and restore purchases."),
+        );
+        return;
+      }
+      Alert.alert(
+        t("Notice"),
+        t("Promo code redemption is available on iOS and Android."),
+      );
+    } catch (error) {
+      console.warn("Promo code redemption failed", error?.message || error);
+      Alert.alert(
+        t("Notice"),
+        t("Something went wrong. Please try again shortly."),
+      );
+    } finally {
+      setRedeemInProgress(false);
     }
   };
 
@@ -254,30 +355,6 @@ export default function PlusModal({
     }
   };
 
-  const toggleHideNextTime = async () => {
-    const nextValue = !hideNextTime;
-    setHideNextTime(nextValue);
-    await savePlusModalHidden(nextValue);
-  };
-
-  useEffect(() => {
-    let mounted = true;
-    const loadPreference = async () => {
-      if (!visible) {
-        return;
-      }
-      const hidden = await loadPlusModalHidden();
-      if (mounted) {
-        setHideNextTime(hidden);
-      }
-    };
-
-    loadPreference();
-    return () => {
-      mounted = false;
-    };
-  }, [visible]);
-
   useEffect(() => {
     let mounted = true;
 
@@ -335,7 +412,7 @@ export default function PlusModal({
       onRequestClose={onClose}
     >
       <View style={styles.modalBackdrop}>
-        <View style={styles.offerCard}>
+        <View style={[styles.offerCard, { maxHeight: cardMaxHeight }]}>
           <LinearGradient
             colors={["#2A1133", "#541C4B", "#8C3160"]}
             start={{ x: 0, y: 0 }}
@@ -362,23 +439,33 @@ export default function PlusModal({
             </MotionPressable>
           </LinearGradient>
 
-            <View style={styles.offerBody}>
+            <ScrollView
+              style={[styles.offerBodyScroll, { maxHeight: bodyMaxHeight }]}
+              contentContainerStyle={styles.offerBody}
+              showsVerticalScrollIndicator={false}
+              bounces
+              keyboardShouldPersistTaps="handled"
+            >
               {packageOptions.length > 0 && (
-                <View style={styles.planSwitcher}>
+                <View
+                  style={[styles.planSwitcher, compactLayout && styles.planSwitcherCompact]}
+                >
                   {packageOptions.map((pkg, index) => {
                     const isSelected = pkg === selectedPackage;
                     const optionDisabled =
                       purchaseInProgress || loadingPrice || !pkg;
                     const title = packageName(pkg?.packageType);
-                    const price = pkg?.product?.priceString || "";
-                    const caption = billingLabel(pkg?.packageType);
+                    const price = packageDisplayPrice(pkg);
+                    const caption = packageCaption(pkg);
                     return (
                       <MotionPressable
                         key={pkg?.identifier || `${title}-${index}`}
                         style={[
                           styles.planOption,
                           index < packageOptions.length - 1 &&
-                            styles.planOptionSpacer,
+                            (compactLayout
+                              ? styles.planOptionSpacerVertical
+                              : styles.planOptionSpacer),
                           isSelected && styles.planOptionActive,
                           optionDisabled && styles.planOptionDisabled,
                         ]}
@@ -415,13 +502,37 @@ export default function PlusModal({
                             isSelected && styles.planOptionCaptionActive,
                           ]}
                         >
-                          {caption || packageLabel(pkg?.packageType)}
+                          {caption}
                         </Text>
                       </MotionPressable>
                     );
                   })}
                 </View>
               )}
+              <View style={styles.offerListItem}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={20}
+                  color={theme.accentPrimary}
+                />
+                <Text style={styles.offerListText}>{t("Custom Game access")}</Text>
+              </View>
+              <View style={styles.offerListItem}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={20}
+                  color={theme.accentPrimary}
+                />
+                <Text style={styles.offerListText}>{t("Auto Fill traits")}</Text>
+              </View>
+              <View style={styles.offerListItem}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={20}
+                  color={theme.accentPrimary}
+                />
+                <Text style={styles.offerListText}>{t("Favorites")}</Text>
+              </View>
               <View style={styles.offerListItem}>
                 <Ionicons
                   name="checkmark-circle"
@@ -483,22 +594,6 @@ export default function PlusModal({
                 <Text style={styles.offerLaterText}>{t("Maybe later")}</Text>
               </MotionPressable>
 
-              <MotionPressable
-                style={styles.hideToggleRow}
-                onPress={toggleHideNextTime}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: hideNextTime }}
-              >
-                <Ionicons
-                  name={hideNextTime ? "checkbox" : "square-outline"}
-                  size={20}
-                  color={hideNextTime ? theme.accentPrimary : theme.helperText}
-                />
-                <Text style={styles.hideToggleText}>
-                  {t("Don't show again")}
-                </Text>
-              </MotionPressable>
-
               <View style={styles.divider} />
 
               <MotionPressable
@@ -556,7 +651,28 @@ export default function PlusModal({
                   />
                 )}
               </MotionPressable>
-            </View>
+              <MotionPressable
+                style={styles.promoButton}
+                onPress={handleRedeemPromoCode}
+                activeOpacity={0.85}
+                disabled={redeemInProgress}
+              >
+                <Ionicons
+                  name="ticket-outline"
+                  size={18}
+                  color={theme.bodyText}
+                  style={styles.promoIcon}
+                />
+                <Text style={styles.promoText}>{t("Use promo code")}</Text>
+                {redeemInProgress && (
+                  <ActivityIndicator
+                    size="small"
+                    color={theme.bodyText}
+                    style={styles.promoSpinner}
+                  />
+                )}
+              </MotionPressable>
+            </ScrollView>
           </View>
         </View>
     </Modal>
@@ -570,6 +686,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
+    paddingVertical: 20,
   },
   offerCard: {
     width: "90%",
@@ -583,6 +700,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.32,
     shadowRadius: 30,
     elevation: 14,
+  },
+  offerBodyScroll: {
+    backgroundColor: "#ffffff",
   },
   offerHeader: {
     paddingVertical: 18,
@@ -646,25 +766,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginBottom: 12,
   },
+  planSwitcherCompact: {
+    flexDirection: "column",
+  },
   planOption: {
     flex: 1,
     borderRadius: 16,
+    overflow: "hidden",
     paddingVertical: 12,
     paddingHorizontal: 12,
     backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "rgba(126, 80, 180, 0.2)",
-    shadowColor: "#11022C",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#11022C",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.12,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
   planOptionDisabled: {
     opacity: 0.6,
   },
   planOptionSpacer: {
     marginRight: 10,
+  },
+  planOptionSpacerVertical: {
+    marginBottom: 10,
   },
   planOptionActive: {
     backgroundColor: "rgba(136, 86, 246, 0.12)",
@@ -750,18 +883,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  hideToggleRow: {
-    marginTop: 10,
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  hideToggleText: {
-    marginLeft: 8,
-    fontSize: 13,
-    fontWeight: "600",
-    color: theme.helperText,
-  },
   restoreButton: {
     marginTop: 10,
     alignSelf: "center",
@@ -783,6 +904,29 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   restoreSpinner: {
+    marginLeft: 8,
+  },
+  promoButton: {
+    marginTop: 10,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  promoIcon: {
+    marginRight: 8,
+  },
+  promoText: {
+    color: theme.bodyText,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  promoSpinner: {
     marginLeft: 8,
   },
   divider: {

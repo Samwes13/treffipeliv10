@@ -52,6 +52,9 @@ export default function GameLobby({ route, navigation }) {
   const [playerToRemove, setPlayerToRemove] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [leaveInProgress, setLeaveInProgress] = useState(false);
+  const [gameMode, setGameMode] = useState("default");
+  const [roundsTotal, setRoundsTotal] = useState(6);
+  const [customRules, setCustomRules] = useState([]);
   const [countdownData, setCountdownData] = useState(null);
   const [countdownStep, setCountdownStep] = useState(null);
   const [countdownActive, setCountdownActive] = useState(false);
@@ -210,6 +213,13 @@ export default function GameLobby({ route, navigation }) {
         },
       );
       setPlayers(playerList);
+      setGameMode(gameData.mode || "default");
+      setRoundsTotal(Number(gameData.roundsTotal) || 6);
+      const rulesRaw = gameData.rules || [];
+      const rulesArray = Array.isArray(rulesRaw)
+        ? rulesRaw
+        : Object.values(rulesRaw || {});
+      setCustomRules(rulesArray);
 
       const currentPlayer =
         playerList.find((player) => player.username === username) ||
@@ -414,14 +424,19 @@ export default function GameLobby({ route, navigation }) {
             }
           }
 
-          await update(ref(database, `games/${gamepin}`), {
+          const gameUpdates = {
             currentTrait: shuffledTraits[0],
             usedTraits: [shuffledTraits[0].traitId],
             currentPlayerIndex: 0,
             currentRound: 1,
             isGameStarted: true,
             lastActivityAt: serverTimestamp(),
-          });
+          };
+          if (gameMode === "custom") {
+            gameUpdates.status = "playing";
+          }
+
+          await update(ref(database, `games/${gamepin}`), gameUpdates);
 
           if (firstPlayerName && shuffledTraits[0]) {
             const nextDateNumber = firstAcceptedCount + 1;
@@ -508,6 +523,29 @@ export default function GameLobby({ route, navigation }) {
     () => players.filter((player) => player.traitsCompleted).length,
     [players],
   );
+
+  const activeRuleLabels = useMemo(() => {
+    if (gameMode !== "custom") {
+      return [];
+    }
+    const labelMap = {
+      reverse_answer: t("Reverse Answer"),
+      blind_choose: t("Blind Choose"),
+      majority_decides: t("Majority decides"),
+      loudest_decides: t("Loudest decides"),
+      skip_rule: t("Skip rule"),
+      custom_rule: t("Custom Rule"),
+    };
+    return (customRules || [])
+      .filter((rule) => rule?.enabled)
+      .map((rule) => {
+        if (rule?.id === "custom_rule" && rule?.text) {
+          return t("Custom Rule: {{text}}", { text: rule.text });
+        }
+        return labelMap[rule?.id] || rule?.id || "";
+      })
+      .filter(Boolean);
+  }, [customRules, gameMode, t]);
 
   const playersSorted = useMemo(() => {
     const waiting = [];
@@ -611,6 +649,53 @@ export default function GameLobby({ route, navigation }) {
           </View>
         </View>
       </LinearGradient>
+
+      {gameMode === "custom" && (
+        <LinearGradient
+          colors={["rgba(255,255,255,0.9)", "rgba(255,245,230,0.8)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={localStyles.customModeCard}
+        >
+          <View style={localStyles.customModeInner}>
+            <View style={localStyles.customModeHeader}>
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color="#ff66c4"
+                style={localStyles.customModeIcon}
+              />
+              <Text style={localStyles.customModeTitle}>
+                {t("Custom Mode")}
+              </Text>
+            </View>
+            <View style={localStyles.customModeRow}>
+              <Ionicons
+                name="repeat-outline"
+                size={16}
+                color="#c2724e"
+                style={localStyles.customModeRowIcon}
+              />
+              <Text style={localStyles.customModeText}>
+                {t("Rounds: {{count}}", { count: roundsTotal })}
+              </Text>
+            </View>
+            <View style={localStyles.customModeRow}>
+              <Ionicons
+                name="sparkles-outline"
+                size={16}
+                color="#c2724e"
+                style={localStyles.customModeRowIcon}
+              />
+              <Text style={localStyles.customModeText}>
+                {activeRuleLabels.length
+                  ? activeRuleLabels.join(", ")
+                  : t("No active rules")}
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
+      )}
     </View>
   );
 
@@ -918,6 +1003,8 @@ export default function GameLobby({ route, navigation }) {
           visible={showSettings}
           onClose={() => setShowSettings(false)}
           onOpenGameRules={() => setShowRules(true)}
+          onOpenFavorites={() => navigation.navigate("Favorites")}
+          onOpenAutoFillManager={() => navigation.navigate("AutoFillTraitManager")}
           onOpenPlus={() => {
             if (isPlus) {
               return;
@@ -1025,6 +1112,49 @@ const localStyles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.94)",
     paddingVertical: 24,
     paddingHorizontal: 20,
+  },
+  customModeCard: {
+    width: "100%",
+    borderRadius: 24,
+    padding: 1.2,
+    marginTop: 16,
+    shadowColor: "#13093A",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.24,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  customModeInner: {
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+  },
+  customModeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  customModeIcon: {
+    marginRight: 8,
+  },
+  customModeTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#2d102a",
+  },
+  customModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  customModeRowIcon: {
+    marginRight: 8,
+  },
+  customModeText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#6b3a45",
   },
   summaryHeader: {
     flexDirection: "row",
