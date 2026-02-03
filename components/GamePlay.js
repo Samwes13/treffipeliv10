@@ -1907,8 +1907,21 @@ export default function GamePlay({ route, navigation }) {
     }, DECISION_ANIM_DURATION);
 
     animateOutLeft(cardX, async () => {
+      const finalDecision = choice === "juu" ? "YES" : "NO";
+      const turnHistoryKey =
+        currentTurnKey ||
+        `${gameState.currentRound}:${targetKey}:${currentTraitId ?? "trait"}`;
       const traitUpdates = buildNextTraitUpdates();
       const updates = {
+        [`players/${targetKey}/decisions/${gameState.currentRound}`]: finalDecision,
+        [`turnHistory/${turnHistoryKey}`]: {
+          round: gameState.currentRound,
+          playerKey: targetKey,
+          playerName: currentTurnPlayer?.username || "",
+          trait: gameState.currentTrait?.text || "",
+          traitId: gameState.currentTrait?.traitId ?? null,
+          decision: finalDecision,
+        },
         currentPlayerIndex: nextPlayerIndex,
         currentRound: nextRound,
         ...traitUpdates,
@@ -3234,6 +3247,7 @@ const gp = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
+    alignItems: "stretch",
     marginTop: 12,
     width: "100%",
     marginBottom: 8,
@@ -3260,6 +3274,7 @@ const gp = StyleSheet.create({
     justifyContent: "center",
   },
   actionButtonGradient: {
+    flex: 1,
     paddingVertical: 16,
     paddingHorizontal: 20,
     flexDirection: "row",
@@ -3273,6 +3288,8 @@ const gp = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
+    textAlign: "center",
+    flexShrink: 1,
   },
   waitingCard: {
     flexDirection: "row",

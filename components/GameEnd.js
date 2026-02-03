@@ -178,9 +178,6 @@ export default function GameEnd({ route, navigation }) {
     : "";
 
   const customSummary = useMemo(() => {
-    if (!isCustomMode) {
-      return [];
-    }
     const byPlayer = {};
     players.forEach((player) => {
       const name = player?.username || t("Player");
@@ -205,7 +202,7 @@ export default function GameEnd({ route, navigation }) {
         rounds: player.rounds.sort((a, b) => a.round - b.round),
       }))
       .sort((a, b) => a.username.localeCompare(b.username));
-  }, [isCustomMode, players, t, turnHistory]);
+  }, [players, t, turnHistory]);
 
   const customSummaryByName = useMemo(() => {
     const map = {};
@@ -218,14 +215,20 @@ export default function GameEnd({ route, navigation }) {
   }, [customSummary]);
 
   const getDecisionMeta = (decision) => {
-    if (decision === "YES") {
+    const normalized = String(decision || "").trim().toUpperCase();
+    if (normalized === "YES" || normalized === "JUU" || normalized === "KEEP") {
       return { label: t("Keep"), style: ge.decisionYes };
     }
-    if (decision === "NO") {
-      return { label: t("Skip"), style: ge.decisionNo };
+    if (
+      normalized === "NO" ||
+      normalized === "EI" ||
+      normalized === "BREAKUP" ||
+      normalized === "BREAK_UP"
+    ) {
+      return { label: t("Break up"), style: ge.decisionNo };
     }
-    if (decision === "SKIPPED") {
-      return { label: t("Skipped"), style: ge.decisionSkip };
+    if (normalized === "SKIPPED" || normalized === "SKIP") {
+      return { label: t("Skip"), style: ge.decisionSkip };
     }
     return { label: t("Unknown"), style: ge.decisionSkip };
   };
@@ -611,12 +614,26 @@ export default function GameEnd({ route, navigation }) {
                   const isSilver = rank === 2;
                   const isBronze = rank === 3;
                   const expandKey = `longest:${player.username}`;
-                  const isExpanded = isCustomMode && expandedKey === expandKey;
                   const rounds =
                     customSummaryByName[player.username]?.rounds || [];
+                  const hasRoundSummary = rounds.length > 0;
+                  const isExpanded = expandedKey === expandKey;
                   return (
                     <View key={`${player.username}-longest-${index}`}>
-                      <View
+                      <Pressable
+                        onPress={
+                          hasRoundSummary
+                            ? () =>
+                                setExpandedKey((prev) =>
+                                  prev === expandKey ? null : expandKey,
+                                )
+                            : undefined
+                        }
+                        disabled={!hasRoundSummary}
+                        accessibilityRole={hasRoundSummary ? "button" : undefined}
+                        accessibilityLabel={
+                          hasRoundSummary ? t("Round summary") : undefined
+                        }
                         style={[
                           ge.leaderRow,
                           (isGold || isSilver || isBronze) && ge.leaderRowTop,
@@ -644,53 +661,8 @@ export default function GameEnd({ route, navigation }) {
                             #{rank}
                           </Text>
                         </View>
-                        {isCustomMode ? (
-                          <Pressable
-                            onPress={() =>
-                              setExpandedKey((prev) =>
-                                prev === expandKey ? null : expandKey,
-                              )
-                            }
-                            style={ge.leaderInfoPressable}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("Round summary")}
-                          >
-                            <View style={ge.leaderInfo}>
-                              <View style={ge.leaderNameRow}>
-                                <Text
-                                  style={[
-                                    ge.leaderName,
-                                    isGold && ge.leaderNameChampion,
-                                    isSilver && ge.leaderNameSilver,
-                                    isBronze && ge.leaderNameBronze,
-                                  ]}
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                >
-                                  {player.username}
-                                </Text>
-                                <Ionicons
-                                  name={
-                                    isExpanded
-                                      ? "chevron-up-outline"
-                                      : "chevron-down-outline"
-                                  }
-                                  size={16}
-                                  color={theme.metaLabel}
-                                  style={ge.leaderChevron}
-                                />
-                              </View>
-                              <Text
-                                style={ge.leaderMeta}
-                                numberOfLines={2}
-                                ellipsizeMode="tail"
-                              >
-                                {player.accepted || 0} {matchLabel}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        ) : (
-                          <View style={ge.leaderInfo}>
+                        <View style={ge.leaderInfo}>
+                          <View style={ge.leaderNameRow}>
                             <Text
                               style={[
                                 ge.leaderName,
@@ -703,15 +675,27 @@ export default function GameEnd({ route, navigation }) {
                             >
                               {player.username}
                             </Text>
-                            <Text
-                              style={ge.leaderMeta}
-                              numberOfLines={2}
-                              ellipsizeMode="tail"
-                            >
-                              {player.accepted || 0} {matchLabel}
-                            </Text>
                           </View>
-                        )}
+                          <Text
+                            style={ge.leaderMeta}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {player.accepted || 0} {matchLabel}
+                          </Text>
+                          {hasRoundSummary ? (
+                            <Ionicons
+                              name={
+                                isExpanded
+                                  ? "chevron-up-outline"
+                                  : "chevron-down-outline"
+                              }
+                              size={16}
+                              color={theme.metaLabel}
+                              style={ge.leaderChevronBelow}
+                            />
+                          ) : null}
+                        </View>
                         <View
                           style={[
                             ge.scorePill,
@@ -733,8 +717,8 @@ export default function GameEnd({ route, navigation }) {
                             {t("Date {{number}}", { number: player.treffit })}
                           </Text>
                         </View>
-                      </View>
-                      {isCustomMode && isExpanded && (
+                      </Pressable>
+                      {hasRoundSummary && isExpanded && (
                         <View style={ge.leaderExpandCard}>
                           <View style={ge.leaderExpandHeader}>
                             <Ionicons
@@ -829,12 +813,26 @@ export default function GameEnd({ route, navigation }) {
                   const isSilver = rank === 2;
                   const isBronze = rank === 3;
                   const expandKey = `skips:${player.username}`;
-                  const isExpanded = isCustomMode && expandedKey === expandKey;
                   const rounds =
                     customSummaryByName[player.username]?.rounds || [];
+                  const hasRoundSummary = rounds.length > 0;
+                  const isExpanded = expandedKey === expandKey;
                   return (
                     <View key={`${player.username}-skips-${index}`}>
-                      <View
+                      <Pressable
+                        onPress={
+                          hasRoundSummary
+                            ? () =>
+                                setExpandedKey((prev) =>
+                                  prev === expandKey ? null : expandKey,
+                                )
+                            : undefined
+                        }
+                        disabled={!hasRoundSummary}
+                        accessibilityRole={hasRoundSummary ? "button" : undefined}
+                        accessibilityLabel={
+                          hasRoundSummary ? t("Round summary") : undefined
+                        }
                         style={[
                           ge.leaderRow,
                           (isGold || isSilver || isBronze) && ge.leaderRowTop,
@@ -862,60 +860,32 @@ export default function GameEnd({ route, navigation }) {
                             #{rank}
                           </Text>
                         </View>
-                        {isCustomMode ? (
-                          <Pressable
-                            onPress={() =>
-                              setExpandedKey((prev) =>
-                                prev === expandKey ? null : expandKey,
-                              )
-                            }
-                            style={ge.leaderInfoPressable}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("Round summary")}
+                        <View style={ge.leaderInfo}>
+                          <Text
+                            style={[
+                              ge.leaderName,
+                              isGold && ge.leaderNameChampion,
+                              isSilver && ge.leaderNameSilver,
+                              isBronze && ge.leaderNameBronze,
+                            ]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
                           >
-                            <View style={ge.leaderInfo}>
-                              <View style={ge.leaderNameRow}>
-                                <Text
-                                  style={[
-                                    ge.leaderName,
-                                    isGold && ge.leaderNameChampion,
-                                    isSilver && ge.leaderNameSilver,
-                                    isBronze && ge.leaderNameBronze,
-                                  ]}
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                >
-                                  {player.username}
-                                </Text>
-                                <Ionicons
-                                  name={
-                                    isExpanded
-                                      ? "chevron-up-outline"
-                                      : "chevron-down-outline"
-                                  }
-                                  size={16}
-                                  color={theme.metaLabel}
-                                  style={ge.leaderChevron}
-                                />
-                              </View>
-                            </View>
-                          </Pressable>
-                        ) : (
-                          <View style={ge.leaderInfo}>
-                            <Text
-                              style={[
-                                ge.leaderName,
-                                isGold && ge.leaderNameChampion,
-                                isSilver && ge.leaderNameSilver,
-                                isBronze && ge.leaderNameBronze,
-                              ]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {player.username}
-                            </Text>
-                          </View>
-                        )}
+                            {player.username}
+                          </Text>
+                          {hasRoundSummary ? (
+                            <Ionicons
+                              name={
+                                isExpanded
+                                  ? "chevron-up-outline"
+                                  : "chevron-down-outline"
+                              }
+                              size={16}
+                              color={theme.metaLabel}
+                              style={ge.leaderChevronBelow}
+                            />
+                          ) : null}
+                        </View>
                         <View
                           style={[
                             ge.scorePill,
@@ -937,8 +907,8 @@ export default function GameEnd({ route, navigation }) {
                             {player.skipCount} {skipLabel}
                           </Text>
                         </View>
-                      </View>
-                      {isCustomMode && isExpanded && (
+                      </Pressable>
+                      {hasRoundSummary && isExpanded && (
                         <View style={ge.leaderExpandCard}>
                           <View style={ge.leaderExpandHeader}>
                             <Ionicons
@@ -1472,6 +1442,10 @@ const ge = StyleSheet.create({
     color: theme.bodyText,
     fontSize: 16,
     fontWeight: "600",
+  },
+  leaderChevronBelow: {
+    alignSelf: "center",
+    marginTop: 4,
   },
   leaderChevron: {
     marginLeft: 6,
